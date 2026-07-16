@@ -1,0 +1,157 @@
+{
+  "model_name": "leanback_subclassifier_v2_2_candidate",
+  "candidate_name": "V2.2 leanback two-stage fine classifier",
+  "created_at": "2026-07-16T06:35:33.732573+00:00",
+  "labels": [
+    "后仰靠背坐",
+    "后靠/瘫坐类"
+  ],
+  "fallback_label": "后靠坐姿",
+  "parent_model_version": "v2_1_candidate",
+  "selected_method": "prototype",
+  "feature_names": [
+    "cop_x",
+    "cop_y",
+    "front_share",
+    "back_share",
+    "front_back_balance",
+    "row_0_3_share",
+    "row_4_7_share",
+    "row_8_11_share",
+    "row_12_15_share",
+    "left_share",
+    "right_share",
+    "left_right_balance",
+    "active_area_ratio",
+    "peak_share",
+    "hhi",
+    "bbox_height",
+    "bbox_width",
+    "largest_region_ratio",
+    "region_count_scaled",
+    "cop_y_std",
+    "total_cv",
+    "log_total"
+  ],
+  "development_files": [
+    "H1_houyangkaobei1.csv",
+    "H1_houyangkaobei2.csv",
+    "H1_houyangkaobei3.csv",
+    "H1_houyangkaobei4.csv",
+    "H2_houkaotanzuo1.csv",
+    "H2_houkaotanzuo2.csv",
+    "H2_houyangkaobei1.csv",
+    "H2_houyangkaobei2.csv"
+  ],
+  "development_data_notice": "H1/H2 are development validation data only, not final external holdout.",
+  "comparison_summary": [
+    {
+      "method": "prototype",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "fallback_count": 0,
+      "wrong_accept_count": 0,
+      "fine_file_accuracy": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.183999
+    },
+    {
+      "method": "logistic_regression",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "fallback_count": 0,
+      "wrong_accept_count": 0,
+      "fine_file_accuracy": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.183999
+    },
+    {
+      "method": "linear_svm",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "fallback_count": 0,
+      "wrong_accept_count": 0,
+      "fine_file_accuracy": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.183999
+    },
+    {
+      "method": "lda",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "fallback_count": 0,
+      "wrong_accept_count": 0,
+      "fine_file_accuracy": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.183999
+    },
+    {
+      "method": "random_forest",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "fallback_count": 0,
+      "wrong_accept_count": 0,
+      "fine_file_accuracy": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.184296
+    },
+    {
+      "method": "physical_hybrid",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "fallback_count": 0,
+      "wrong_accept_count": 0,
+      "fine_file_accuracy": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.183999
+    }
+  ],
+  "lofo_summary": {
+    "method": "prototype",
+    "file_count": 8,
+    "correct_accept_count": 8,
+    "fallback_count": 0,
+    "wrong_accept_count": 0,
+    "fine_file_accuracy": 1.0,
+    "fallback_rate": 0.0,
+    "wrong_accept_rate": 0.0,
+    "mean_boundary_ratio": 0.183999
+  },
+  "h1_train_h2_summary": {
+    "method": "h1_train_h2",
+    "file_count": 4,
+    "correct_accept_count": 4,
+    "fallback_count": 0,
+    "wrong_accept_count": 0,
+    "fine_file_accuracy": 1.0,
+    "fallback_rate": 0.0,
+    "wrong_accept_rate": 0.0,
+    "mean_boundary_ratio": 0.519968
+  },
+  "h2_train_h1_summary": {
+    "method": "h2_train_h1",
+    "file_count": 4,
+    "correct_accept_count": 2,
+    "fallback_count": 2,
+    "wrong_accept_count": 0,
+    "fine_file_accuracy": 0.5,
+    "fallback_rate": 0.5,
+    "wrong_accept_rate": 0.0,
+    "mean_boundary_ratio": 0.846018
+  },
+  "python": {
+    "version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 11:23:37) [Clang 14.0.6 ]",
+    "platform": "macOS-15.7.5-arm64-arm-64bit-Mach-O"
+  },
+  "dependencies": {
+    "numpy": "2.1.3",
+    "sklearn": "1.6.1",
+    "joblib": "1.4.2"
+  }
+}

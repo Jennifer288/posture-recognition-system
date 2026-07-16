@@ -1,0 +1,14 @@
+{
+  "model_version": "v2_2_candidate",
+  "parent_model_version": "v2_1_candidate",
+  "submodel_version": "leanback_subclassifier_v2_2_candidate",
+  "stage1_gate": "leanback-related parent/raw/second/prototype label only",
+  "fallback_label": "后靠坐姿",
+  "fine_margin_threshold": 0.08,
+  "fine_confidence_threshold": 0.55,
+  "distance_thresholds": {
+    "后仰靠背坐": 6.00996,
+    "后靠/瘫坐类": 3.434683
+  },
+  "top_level_boundary_for_fine_fallback": false
+}

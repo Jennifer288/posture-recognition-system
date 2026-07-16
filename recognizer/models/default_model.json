@@ -1,0 +1,5 @@
+{
+  "model_version": "v2_2_candidate",
+  "updated_at": "2026-07-16",
+  "reason": "V2.2 leanback two-stage classifier passed H3 external holdout promotion gate."
+}

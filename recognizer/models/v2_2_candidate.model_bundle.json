@@ -1,0 +1,14 @@
+{
+  "model_version": "v2_2_candidate",
+  "display_name": "V2.2候选（后靠两阶段细分类，未闭卷）",
+  "parent_model_version": "v2_1_candidate",
+  "parent_rf_model": "/Users/yongqizhang/Documents/New project/recognizer/models/rf_posture_v2_1_candidate.joblib",
+  "parent_metadata": "/Users/yongqizhang/Documents/New project/recognizer/models/rf_posture_v2_1_candidate.metadata.json",
+  "parent_prototype_bank": "/Users/yongqizhang/Documents/New project/recognizer/models/prototype_bank_v2_1_candidate.json",
+  "parent_runtime_config": "/Users/yongqizhang/Documents/New project/recognizer/models/rf_posture_v2_1_candidate.runtime_config.json",
+  "leanback_submodel": "/Users/yongqizhang/Documents/New project/recognizer/models/leanback_subclassifier_v2_2_candidate.joblib",
+  "leanback_metadata": "/Users/yongqizhang/Documents/New project/recognizer/models/leanback_subclassifier_v2_2_candidate.metadata.json",
+  "leanback_prototype_bank": "/Users/yongqizhang/Documents/New project/recognizer/models/leanback_prototype_bank_v2_2_candidate.json",
+  "leanback_runtime_config": "/Users/yongqizhang/Documents/New project/recognizer/models/leanback_subclassifier_v2_2_candidate.runtime_config.json",
+  "default_model_pointer_changed": false
+}

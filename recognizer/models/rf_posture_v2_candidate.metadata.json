@@ -1,0 +1,184 @@
+{
+  "model_name": "rf_posture_v2_candidate",
+  "candidate_name": "V2 Round 1.4 B_core_q3",
+  "model_role": "V2 candidate; not default runtime model",
+  "default_runtime_model": false,
+  "dataset_version": "V1 frozen + V2 Batch A/B + qianqing Round2 q3 only",
+  "label_system": "V1 14-label taxonomy",
+  "labels": [
+    "交叉腿靠背坐",
+    "侧身倚靠坐",
+    "前倾端坐",
+    "后仰靠背坐",
+    "后靠/瘫坐类",
+    "斜跨坐",
+    "标准侧坐",
+    "标准靠背坐",
+    "盘腿坐",
+    "端坐前倾探身",
+    "端正坐姿",
+    "蜷缩坐",
+    "跪坐",
+    "躺卧类"
+  ],
+  "label_count": 14,
+  "feature_dim": 264,
+  "feature_version": "pressure_features_v1_264",
+  "feature_extractor": "recognizer.feature_extractor.extract_features",
+  "training_manifest": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/v2_candidate_training_manifest.csv",
+  "training_csv_count": 72,
+  "training_excluded_csv_count": 3,
+  "qianqing_round2_policy": {
+    "v2__qianqingduanzuo1.csv": "boundary diagnostic; excluded from RF core training",
+    "v2__qianqingduanzuo2.csv": "natural variation reserve; excluded from RF core training",
+    "v2__qianqingduanzuo3.csv": "qianqing_core; included with role weight 1.0",
+    "v2__qianqingduanzuo4.csv": "boundary/quality reserve; excluded from RF core training"
+  },
+  "random_seed": 42,
+  "rf_params": {
+    "base_estimator": "RandomForestClassifier",
+    "n_estimators": 80,
+    "random_state": 42,
+    "class_weight": "balanced_subsample",
+    "min_samples_leaf": 2,
+    "n_jobs": 1
+  },
+  "probability_calibration": {
+    "method": "sigmoid",
+    "wrapper": "sklearn.calibration.CalibratedClassifierCV",
+    "cv": 3,
+    "scope": "training windows only"
+  },
+  "sampling": {
+    "strategy": "class/csv balanced selected windows",
+    "role_weights": {
+      "v2__qianqingduanzuo3.csv": 1.0
+    },
+    "window": 8,
+    "step": 2
+  },
+  "boundary": {
+    "confidence_threshold": 0.55,
+    "margin_threshold": 0.1,
+    "prototype_boundary": "diagnostic auxiliary only"
+  },
+  "file_decision": {
+    "method": "window_majority",
+    "boundary_label": "Boundary/低置信度"
+  },
+  "v1_baseline": {
+    "round1_2_boundary_aware_file_accuracy": 0.875,
+    "official_v1_boundary_aware_file_accuracy": 0.8085106382978723
+  },
+  "validation": {
+    "boundary_aware_file_accuracy_all28": 0.892857,
+    "boundary_aware_window_accuracy_all28": 0.848263,
+    "rf_raw_file_accuracy_all28": 0.892857,
+    "boundary_rate": 0.053995,
+    "natural_duanzheng": "4/5",
+    "qianqing_ab": "4/5",
+    "qianqing_round2": "3/4",
+    "biaozhunkaobei": "5/5",
+    "duanzuoqianqing": "3/3",
+    "other11_regression": "11/11",
+    "save_gate": {
+      "best_experiment": "B_core_q3",
+      "best_file_decision": "window_majority",
+      "boundary_file_accuracy_all": 0.892857,
+      "required_boundary_file_accuracy": 0.875,
+      "natural_duanzheng_correct": 4,
+      "natural_duanzheng_total": 5,
+      "qianqing_ab_correct": 4,
+      "qianqing_ab_total": 5,
+      "qianqing_new_correct": 3,
+      "qianqing_new_total": 4,
+      "biaozhunkaobei_correct": 5,
+      "biaozhunkaobei_total": 5,
+      "duanzuoqianqing_correct": 3,
+      "duanzuoqianqing_total": 3,
+      "other11_regression_file_accuracy": 1.0,
+      "object_posture_calls": 0,
+      "should_save_v2_candidate": true
+    },
+    "development_benchmark_report_only": [
+      {
+        "filename": "test.csv",
+        "expected_label": "端正坐姿",
+        "raw_prediction": "标准靠背坐",
+        "final_output": "标准靠背坐",
+        "correct_final": false,
+        "boundary_rate": 0.066667,
+        "file_confidence": 0.662871,
+        "second_label": "盘腿坐",
+        "file_margin": 0.484768
+      },
+      {
+        "filename": "test1.csv",
+        "expected_label": "端正坐姿",
+        "raw_prediction": "端正坐姿",
+        "final_output": "端正坐姿",
+        "correct_final": true,
+        "boundary_rate": 0.008439,
+        "file_confidence": 0.908485,
+        "second_label": "前倾端坐",
+        "file_margin": 0.859361
+      },
+      {
+        "filename": "test2.csv",
+        "expected_label": "端正坐姿",
+        "raw_prediction": "端正坐姿",
+        "final_output": "Boundary/低置信度",
+        "correct_final": false,
+        "boundary_rate": 0.578182,
+        "file_confidence": 0.563879,
+        "second_label": "前倾端坐",
+        "file_margin": 0.165111
+      },
+      {
+        "filename": "test3.csv",
+        "expected_label": "端正坐姿",
+        "raw_prediction": "前倾端坐",
+        "final_output": "前倾端坐",
+        "correct_final": false,
+        "boundary_rate": 0.0,
+        "file_confidence": 0.723061,
+        "second_label": "端正坐姿",
+        "file_margin": 0.480376
+      }
+    ]
+  },
+  "artifacts": {
+    "rf_model": "/Users/yongqizhang/Documents/New project/recognizer/models/rf_posture_v2_candidate.joblib",
+    "metadata": "/Users/yongqizhang/Documents/New project/recognizer/models/rf_posture_v2_candidate.metadata.json",
+    "prototype_bank": "/Users/yongqizhang/Documents/New project/recognizer/models/prototype_bank_v2_candidate.json",
+    "runtime_config": "/Users/yongqizhang/Documents/New project/recognizer/models/rf_posture_v2_candidate.runtime_config.json",
+    "validation_summary": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/v2_candidate_validation_summary.csv",
+    "file_predictions": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/v2_candidate_file_predictions.csv",
+    "confusion_matrices": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/v2_candidate_confusion_matrices.json",
+    "release_notes": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/V2_CANDIDATE_RELEASE_NOTES.md",
+    "external_holdout_plan": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/V2_EXTERNAL_HOLDOUT_PLAN.md"
+  },
+  "created_at": "2026-07-15T08:45:45.093530+00:00",
+  "python": {
+    "version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 11:23:37) [Clang 14.0.6 ]",
+    "executable": "/opt/anaconda3/bin/python3",
+    "platform": "macOS-15.7.5-arm64-arm-64bit-Mach-O"
+  },
+  "dependencies": {
+    "numpy": "2.1.3",
+    "sklearn": "1.6.1",
+    "joblib": "1.4.2"
+  },
+  "save_load_consistency": {
+    "predict_equal": true,
+    "predict_proba_allclose": true,
+    "feature_dim": 264,
+    "metadata_labels_match_model_classes": true
+  },
+  "occupancy_regression": {
+    "summary_json": "/Users/yongqizhang/Documents/New project/posture_dataset_v2/reports/v2_candidate_release/object_occupancy_v2_candidate/object_batch1_summary_current_rules.json",
+    "object_posture_calls": 0,
+    "object_files": 6,
+    "human_files": 18
+  }
+}

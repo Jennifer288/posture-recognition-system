@@ -1,0 +1,78 @@
+{
+  "promoted_model_version": "v2_2_candidate",
+  "previous_default_model": "v2_1_candidate",
+  "new_default_model": "v2_2_candidate",
+  "parent_model_version": "v2_1_candidate",
+  "submodel_version": "leanback_subclassifier_v2_2_candidate",
+  "promotion_status": "promoted_default",
+  "promotion_reason": "passed_h3_external_holdout",
+  "external_holdout_batch": "H3",
+  "holdout_valid_files": 4,
+  "correct_accept": 3,
+  "correct_fallback": 1,
+  "wrong_accept": 0,
+  "gate_miss": 0,
+  "fine_classification_rate": 0.75,
+  "safe_resolution_rate": 1.0,
+  "artifact_hashes": {
+    "v2_1_parent_model": {
+      "path": "recognizer/models/rf_posture_v2_1_candidate.joblib",
+      "sha256": "7a30cdd3951a71400fc5c442124702233cdd7d6823ec76c2a681858f59651c39"
+    },
+    "v2_1_parent_metadata": {
+      "path": "recognizer/models/rf_posture_v2_1_candidate.metadata.json",
+      "sha256": "6ec614d94f65d81169e0b84ee62e5e8f2edde7c5c37122aed25ef750a4637f89"
+    },
+    "v2_1_parent_prototype_bank": {
+      "path": "recognizer/models/prototype_bank_v2_1_candidate.json",
+      "sha256": "49415ec26d828c856fde80557f5b6f2c5ec1cf10f8a0fbcb5cc25ad3db1b1d7a"
+    },
+    "v2_1_parent_runtime_config": {
+      "path": "recognizer/models/rf_posture_v2_1_candidate.runtime_config.json",
+      "sha256": "43ab719c3699bd2fadacf344a4a551487a9b8c9bda6ce892873c90e6c2c316b1"
+    },
+    "v2_2_submodel": {
+      "path": "recognizer/models/leanback_subclassifier_v2_2_candidate.joblib",
+      "sha256": "829e8204ca8c5b348de2310b209bba54a7b37c22c859336ccfcf3ef0fc73c75c"
+    },
+    "v2_2_submodel_metadata": {
+      "path": "recognizer/models/leanback_subclassifier_v2_2_candidate.metadata.json",
+      "sha256": "ab64849bf090bce7b52e7d480232c0991edb571812490174e059c8b909654f92"
+    },
+    "v2_2_prototype_bank": {
+      "path": "recognizer/models/leanback_prototype_bank_v2_2_candidate.json",
+      "sha256": "b678bc01154743d795c30220ebea2c8524238516a24f08f59637a424e7081703"
+    },
+    "v2_2_runtime_config": {
+      "path": "recognizer/models/leanback_subclassifier_v2_2_candidate.runtime_config.json",
+      "sha256": "22aa6eb72b094a96cdc74f172cfdfd7a47e044821c4ecad6dde253aef1e5fb69"
+    },
+    "v2_2_model_bundle": {
+      "path": "recognizer/models/v2_2_candidate.model_bundle.json",
+      "sha256": "1f244b88db46840c3fad60f70148731c3c8193b60316de848e4282c75f9bdaf4"
+    }
+  },
+  "default_model_hash_before": "46c73345329090179bde347c52e9c484fc3e1f09c7c2d7f5b25f7d95250d08c8",
+  "default_model_hash_after": "b6454af2d38fd15f141574890c8947007db2240da16f95d1e5f88822efeaeaa6",
+  "promotion_timestamp": "2026-07-16T00:00:00+08:00",
+  "git_commit": "f11c4525492952e7862ae705fa2fcebe98a11f5b",
+  "rollback_command": "python3 posture_csv_app.py --model-version v2_1_candidate",
+  "rollback_default_model_edit": {
+    "path": "recognizer/models/default_model.json",
+    "model_version": "v2_1_candidate"
+  },
+  "holdout_data_locked": true,
+  "retraining_permitted_with_h3": false,
+  "h3_data_policy": {
+    "data_role": "external_holdout",
+    "excluded_from_training": true,
+    "excluded_from_tuning": true,
+    "consumed_for_promotion_decision": true,
+    "not_reusable_as_future_holdout": true
+  },
+  "h3_report_paths": {
+    "summary": "posture_dataset_v2/reports/v2_2_h3_external_holdout/v2_2_h3_external_holdout_report.md",
+    "file_results": "posture_dataset_v2/reports/v2_2_h3_external_holdout/h3_file_level_results.csv",
+    "artifact_hashes": "posture_dataset_v2/reports/v2_2_h3_external_holdout/h3_artifact_hash_before_after.json"
+  }
+}

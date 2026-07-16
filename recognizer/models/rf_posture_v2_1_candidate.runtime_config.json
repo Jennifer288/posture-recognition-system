@@ -1,0 +1,11 @@
+{
+  "model_version": "v2_1_candidate",
+  "default_runtime_model": false,
+  "boundary": {
+    "confidence": 0.55,
+    "margin": 0.1,
+    "prototype_mode": "diagnostic_only"
+  },
+  "file_decision": "window_majority",
+  "training_strategy": "core和natural进入RF，boundary保留但不进RF"
+}
