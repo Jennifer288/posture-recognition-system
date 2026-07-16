@@ -22,3 +22,6 @@ recognizer/gui_outputs/
 recognizer/object_data/
 recognizer/outputs/
 recognizer/reports/
+
+# Generated XGBoost outputs
+recognizer/outputs_xgboost/
