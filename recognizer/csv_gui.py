@@ -372,6 +372,8 @@ class PostureCsvApp:
         self.duration_var.set(self._current_segment_duration())
 
     def _prototype_label(self, record: FramePrediction) -> str:
+        if record.lateral_prototype_label:
+            return f"lateral={record.lateral_prototype_label}; d={_format_optional(record.lateral_prototype_distance)}"
         if record.prototype_diagnosis:
             return record.prototype_diagnosis
         if record.raw_label or record.second_label:
@@ -508,6 +510,7 @@ def model_version_display_name(model_version: str) -> str:
         "v2_candidate": "V2 Candidate",
         "v2_1_candidate": "V2.1（Phase 1闭卷通过）",
         "v2_2_candidate": "V2.2（H3闭卷通过）",
+        "v2_3_candidate": "V2.3候选（侧向三类局部解析，未闭卷）",
     }
     return names.get(model_version, model_version)
 
@@ -522,7 +525,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--model-version",
         default=default_gui_model_version(),
-        choices=["v1", "v2_candidate", "v2_1_candidate", "v2_2_candidate"],
+        choices=["v1", "v2_candidate", "v2_1_candidate", "v2_2_candidate", "v2_3_candidate"],
         help="Recognizer model version to load. Default follows recognizer/models/default_model.json.",
     )
     args = parser.parse_args(argv)

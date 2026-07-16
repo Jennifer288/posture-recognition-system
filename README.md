@@ -193,6 +193,7 @@ python3 posture_csv_app.py --model-version v1
 python3 posture_csv_app.py --model-version v2_candidate
 python3 posture_csv_app.py --model-version v2_1_candidate
 python3 posture_csv_app.py --model-version v2_2_candidate
+python3 posture_csv_app.py --model-version v2_3_candidate  # V2.3候选：侧向三类局部解析，未闭卷
 ```
 
 `v2_2_candidate` 是当前默认运行模型：父模型仍为 V2.1，仅在后靠相关
@@ -221,3 +222,7 @@ CSV GUI 导出的 `frame_predictions.csv`、`posture_segments.csv` 和
 `summary.json` 会记录 `model_version`、`model_artifact_sha256`、
 `metadata_sha256`、`runtime_config_sha256`，以及 V2.2 的 submodel
 hash，便于追溯每份识别结果使用的模型。
+
+### V2.3 Candidate
+
+`v2_3_candidate` is candidate-only. It keeps V2.2 as the parent recognizer and adds a local lateral resolver for `标准侧坐` / `斜跨坐` / `侧身倚靠坐`, with `侧向坐姿` as the safe Boundary fallback. It is not the default model and still requires a fresh closed-book holdout before promotion.

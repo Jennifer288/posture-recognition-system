@@ -58,6 +58,7 @@ Recognizer(model_version="v1")
 Recognizer(model_version="v2_candidate")
 Recognizer(model_version="v2_1_candidate")
 Recognizer(model_version="v2_2_candidate")
+Recognizer(model_version="v2_3_candidate")  # candidate-only lateral local resolver
 ```
 
 The local CSV GUI uses the same version names:
@@ -211,3 +212,7 @@ The default model is currently V2.2 after H3 external holdout promotion:
 
 H3 is consumed external holdout evidence for this promotion. It must not enter
 training, tuning, prototype construction, or future unopened holdout claims.
+
+## V2.3 Candidate
+
+`Recognizer(model_version="v2_3_candidate")` explicitly loads the V2.3 candidate stack: V2.2 parent recognizer plus the lateral local resolver. Default `Recognizer()` remains controlled by `recognizer/models/default_model.json`, currently `v2_2_candidate`. V2.3 adds lateral diagnostic fields such as `lateral_subclassifier_triggered`, `lateral_posture_label`, `lateral_boundary_reasons`, and `lateral_fallback_used`.

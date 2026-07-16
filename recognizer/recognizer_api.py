@@ -9,6 +9,7 @@ import numpy as np
 
 from .feature_extractor import as_frame, as_frames
 from .leanback_subclassifier import TwoStageLeanbackRecognizer, load_leanback_fine_model
+from .lateral_subclassifier import TwoStageLateralRecognizer, load_lateral_fine_model
 from .occupancy_detector import OccupancyDetector
 from .rf_recognizer import load_hybrid_recognizer
 from .seat_analyzer import SeatAnalyzer
@@ -48,6 +49,19 @@ MODEL_VERSION_ARTIFACTS = {
         "subprototype_bank": PACKAGE_DIR / "models" / "leanback_prototype_bank_v2_2_candidate.json",
         "subruntime_config": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.runtime_config.json",
         "bundle": PACKAGE_DIR / "models" / "v2_2_candidate.model_bundle.json",
+    },
+    "v2_3_candidate": {
+        "model": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.joblib",
+        "prototype_bank": PACKAGE_DIR / "models" / "prototype_bank_v2_1_candidate.json",
+        "metadata": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.metadata.json",
+        "runtime_config": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.runtime_config.json",
+        "submodel": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.joblib",
+        "subprototype_bank": PACKAGE_DIR / "models" / "leanback_prototype_bank_v2_2_candidate.json",
+        "subruntime_config": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.runtime_config.json",
+        "lateral_submodel": PACKAGE_DIR / "models" / "lateral_subclassifier_v2_3_candidate.joblib",
+        "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_prototype_bank_v2_3_candidate.json",
+        "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_subclassifier_v2_3_candidate.runtime_config.json",
+        "bundle": PACKAGE_DIR / "models" / "v2_3_candidate.model_bundle.json",
     },
 }
 
@@ -121,6 +135,9 @@ class Recognizer:
         self.submodel_path = artifacts.get("submodel")
         self.subprototype_bank_path = artifacts.get("subprototype_bank")
         self.subruntime_config_path = artifacts.get("subruntime_config")
+        self.lateral_submodel_path = artifacts.get("lateral_submodel")
+        self.lateral_prototype_bank_path = artifacts.get("lateral_prototype_bank")
+        self.lateral_runtime_config_path = artifacts.get("lateral_runtime_config")
         self.model_bundle_path = artifacts.get("bundle")
         self.fps = float(fps)
         self.window_seconds = float(window_seconds)
@@ -191,16 +208,27 @@ class Recognizer:
             raise FileNotFoundError(f"RF V1 model not found: {self.model_path}")
         prototype_path = self.prototype_bank_path if self.prototype_bank_path.exists() else None
         parent = load_hybrid_recognizer(self.model_path, prototype_path)
-        if self.model_version != "v2_2_candidate":
+        if self.model_version not in {"v2_2_candidate", "v2_3_candidate"}:
             return parent
         if self.submodel_path is None or not Path(self.submodel_path).exists():
             raise FileNotFoundError(f"V2.2 leanback submodel not found: {self.submodel_path}")
         fine_model = load_leanback_fine_model(self.submodel_path)
-        return TwoStageLeanbackRecognizer(
+        v22 = TwoStageLeanbackRecognizer(
             parent,
             fine_model,
             model_version="v2_2_candidate",
             parent_model_version="v2_1_candidate",
+        )
+        if self.model_version == "v2_2_candidate":
+            return v22
+        if self.lateral_submodel_path is None or not Path(self.lateral_submodel_path).exists():
+            raise FileNotFoundError(f"V2.3 lateral submodel not found: {self.lateral_submodel_path}")
+        lateral_model = load_lateral_fine_model(self.lateral_submodel_path)
+        return TwoStageLateralRecognizer(
+            v22,
+            lateral_model,
+            model_version="v2_3_candidate",
+            parent_model_version="v2_2_candidate",
         )
 
     def _build_analyzer(self, occupancy_detector: OccupancyDetector | None = None) -> SeatAnalyzer:
@@ -239,10 +267,16 @@ class Recognizer:
             "submodel_path": None if self.submodel_path is None else str(self.submodel_path),
             "subprototype_bank_path": None if self.subprototype_bank_path is None else str(self.subprototype_bank_path),
             "subruntime_config_path": None if self.subruntime_config_path is None else str(self.subruntime_config_path),
+            "lateral_submodel_path": None if self.lateral_submodel_path is None else str(self.lateral_submodel_path),
+            "lateral_prototype_bank_path": None if self.lateral_prototype_bank_path is None else str(self.lateral_prototype_bank_path),
+            "lateral_runtime_config_path": None if self.lateral_runtime_config_path is None else str(self.lateral_runtime_config_path),
             "model_bundle_path": None if self.model_bundle_path is None else str(self.model_bundle_path),
             "submodel_sha256": sha256_file(self.submodel_path),
             "subprototype_bank_sha256": sha256_file(self.subprototype_bank_path),
             "subruntime_config_sha256": sha256_file(self.subruntime_config_path),
+            "lateral_submodel_sha256": sha256_file(self.lateral_submodel_path),
+            "lateral_prototype_bank_sha256": sha256_file(self.lateral_prototype_bank_path),
+            "lateral_runtime_config_sha256": sha256_file(self.lateral_runtime_config_path),
             "model_bundle_sha256": sha256_file(self.model_bundle_path),
         }
 
@@ -285,6 +319,21 @@ class Recognizer:
             "fallback_used",
             "parent_model_version",
             "submodel_version",
+            "lateral_subclassifier_triggered",
+            "lateral_gate_reason",
+            "lateral_posture_label",
+            "lateral_confidence",
+            "lateral_margin",
+            "lateral_boundary",
+            "lateral_boundary_reasons",
+            "lateral_prototype_label",
+            "lateral_prototype_distance",
+            "lateral_fallback_used",
+            "lateral_submodel_version",
+            "lateral_second_label",
+            "lateral_second_distance",
+            "lateral_prototype_margin",
+            "lateral_out_of_distribution",
         ]:
             payload[key] = raw.get(key) if is_human else None
         return payload

@@ -1,0 +1,36 @@
+{
+  "model_version": "v2_3_candidate",
+  "display_name": "V2.3候选（侧向三类局部解析，未闭卷）",
+  "parent_model_version": "v2_2_candidate",
+  "lateral_submodel_version": "lateral_subclassifier_v2_3_candidate",
+  "lateral_gate_rules": [
+    "parent/raw/second/prototype candidate in 标准侧坐/斜跨坐/侧身倚靠坐",
+    "parent boundary near a lateral candidate",
+    "seat-observable physical single-side loading gate",
+    "leanback two-stage gate has priority when both match"
+  ],
+  "fallback_label": "侧向坐姿",
+  "boundary_rules": [
+    "low_classifier_margin",
+    "low_prototype_margin",
+    "classifier_prototype_conflict",
+    "side_leaning_diagonal_overlap",
+    "side_leaning_standard_side_overlap",
+    "out_of_distribution",
+    "gate_conflict"
+  ],
+  "margin_threshold": 0.1,
+  "confidence_threshold": 0.5,
+  "distance_thresholds": {
+    "标准侧坐": 2.271043,
+    "侧身倚靠坐": 5.729146,
+    "斜跨坐": 4.260963
+  },
+  "pair_margin_thresholds": {
+    "侧身倚靠坐::标准侧坐": 4.312533,
+    "斜跨坐::标准侧坐": 6.381024,
+    "侧身倚靠坐::斜跨坐": 3.191087,
+    "斜跨坐::斜跨坐": 0.296286
+  },
+  "default_model_pointer_changed": false
+}

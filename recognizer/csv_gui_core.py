@@ -84,6 +84,21 @@ class FramePrediction:
     fallback_used: bool | None = None
     parent_model_version: str | None = None
     submodel_version: str | None = None
+    lateral_subclassifier_triggered: bool | None = None
+    lateral_gate_reason: str | None = None
+    lateral_posture_label: str | None = None
+    lateral_confidence: float | None = None
+    lateral_margin: float | None = None
+    lateral_boundary: bool | None = None
+    lateral_boundary_reasons: str | None = None
+    lateral_prototype_label: str | None = None
+    lateral_prototype_distance: float | None = None
+    lateral_fallback_used: bool | None = None
+    lateral_submodel_version: str | None = None
+    lateral_second_label: str | None = None
+    lateral_second_distance: float | None = None
+    lateral_prototype_margin: float | None = None
+    lateral_out_of_distribution: bool | None = None
     total_pressure: float = 0.0
     active_points: int = 0
     max_pressure: float = 0.0
@@ -289,6 +304,9 @@ class CsvRecognitionSession:
             "submodel_sha256",
             "subprototype_bank_sha256",
             "subruntime_config_sha256",
+            "lateral_submodel_sha256",
+            "lateral_prototype_bank_sha256",
+            "lateral_runtime_config_sha256",
             "model_bundle_sha256",
             "timestamp",
             "frame_index",
@@ -319,6 +337,21 @@ class CsvRecognitionSession:
             "fallback_used",
             "parent_model_version",
             "submodel_version",
+            "lateral_subclassifier_triggered",
+            "lateral_gate_reason",
+            "lateral_posture_label",
+            "lateral_confidence",
+            "lateral_margin",
+            "lateral_boundary",
+            "lateral_boundary_reasons",
+            "lateral_prototype_label",
+            "lateral_prototype_distance",
+            "lateral_fallback_used",
+            "lateral_submodel_version",
+            "lateral_second_label",
+            "lateral_second_distance",
+            "lateral_prototype_margin",
+            "lateral_out_of_distribution",
             "total_pressure",
             "active_points",
             "max_pressure",
@@ -342,6 +375,9 @@ class CsvRecognitionSession:
             "submodel_sha256",
             "subprototype_bank_sha256",
             "subruntime_config_sha256",
+            "lateral_submodel_sha256",
+            "lateral_prototype_bank_sha256",
+            "lateral_runtime_config_sha256",
             "model_bundle_sha256",
             "start_time",
             "end_time",
@@ -463,6 +499,25 @@ def frame_record_from_result(
         fallback_used=bool(result.get("fallback_used")) if is_human and result.get("fallback_used") is not None else None,
         parent_model_version=str(result.get("parent_model_version")) if is_human and result.get("parent_model_version") else None,
         submodel_version=str(result.get("submodel_version")) if is_human and result.get("submodel_version") else None,
+        lateral_subclassifier_triggered=bool(result.get("lateral_subclassifier_triggered"))
+        if is_human and result.get("lateral_subclassifier_triggered") is not None
+        else None,
+        lateral_gate_reason=str(result.get("lateral_gate_reason")) if is_human and result.get("lateral_gate_reason") else None,
+        lateral_posture_label=str(result.get("lateral_posture_label")) if is_human and result.get("lateral_posture_label") else None,
+        lateral_confidence=_optional_float(result.get("lateral_confidence")) if is_human else None,
+        lateral_margin=_optional_float(result.get("lateral_margin")) if is_human else None,
+        lateral_boundary=bool(result.get("lateral_boundary")) if is_human and result.get("lateral_boundary") is not None else None,
+        lateral_boundary_reasons=_summarize_reasons(result.get("lateral_boundary_reasons")) if is_human else None,
+        lateral_prototype_label=str(result.get("lateral_prototype_label")) if is_human and result.get("lateral_prototype_label") else None,
+        lateral_prototype_distance=_optional_float(result.get("lateral_prototype_distance")) if is_human else None,
+        lateral_fallback_used=bool(result.get("lateral_fallback_used")) if is_human and result.get("lateral_fallback_used") is not None else None,
+        lateral_submodel_version=str(result.get("lateral_submodel_version")) if is_human and result.get("lateral_submodel_version") else None,
+        lateral_second_label=str(result.get("lateral_second_label")) if is_human and result.get("lateral_second_label") else None,
+        lateral_second_distance=_optional_float(result.get("lateral_second_distance")) if is_human else None,
+        lateral_prototype_margin=_optional_float(result.get("lateral_prototype_margin")) if is_human else None,
+        lateral_out_of_distribution=bool(result.get("lateral_out_of_distribution"))
+        if is_human and result.get("lateral_out_of_distribution") is not None
+        else None,
         total_pressure=round(total, 4),
         active_points=active_points,
         max_pressure=round(float(np.asarray(frame).max()) if np.asarray(frame).size else 0.0, 4),
@@ -495,6 +550,9 @@ def model_export_info(recognizer: object) -> dict[str, object]:
             "submodel_path": info.get("submodel_path"),
             "subprototype_bank_path": info.get("subprototype_bank_path"),
             "subruntime_config_path": info.get("subruntime_config_path"),
+            "lateral_submodel_path": info.get("lateral_submodel_path"),
+            "lateral_prototype_bank_path": info.get("lateral_prototype_bank_path"),
+            "lateral_runtime_config_path": info.get("lateral_runtime_config_path"),
             "model_bundle_path": info.get("model_bundle_path"),
             "model_artifact_sha256": info.get("model_artifact_sha256"),
             "metadata_sha256": info.get("metadata_sha256"),
@@ -503,6 +561,9 @@ def model_export_info(recognizer: object) -> dict[str, object]:
             "submodel_sha256": info.get("submodel_sha256"),
             "subprototype_bank_sha256": info.get("subprototype_bank_sha256"),
             "subruntime_config_sha256": info.get("subruntime_config_sha256"),
+            "lateral_submodel_sha256": info.get("lateral_submodel_sha256"),
+            "lateral_prototype_bank_sha256": info.get("lateral_prototype_bank_sha256"),
+            "lateral_runtime_config_sha256": info.get("lateral_runtime_config_sha256"),
             "model_bundle_sha256": info.get("model_bundle_sha256"),
         }
         payload.update(promotion_export_info(payload["model_version"]))
@@ -525,6 +586,9 @@ def model_export_info(recognizer: object) -> dict[str, object]:
         "submodel_sha256": None,
         "subprototype_bank_sha256": None,
         "subruntime_config_sha256": None,
+        "lateral_submodel_sha256": None,
+        "lateral_prototype_bank_sha256": None,
+        "lateral_runtime_config_sha256": None,
         "model_bundle_sha256": None,
     }
     payload.update(promotion_export_info(payload["model_version"]))

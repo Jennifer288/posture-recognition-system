@@ -88,6 +88,21 @@ class SeatAnalyzer:
             "fallback_used": smoothed.get("fallback_used"),
             "parent_model_version": smoothed.get("parent_model_version"),
             "submodel_version": smoothed.get("submodel_version"),
+            "lateral_subclassifier_triggered": smoothed.get("lateral_subclassifier_triggered"),
+            "lateral_gate_reason": smoothed.get("lateral_gate_reason"),
+            "lateral_posture_label": smoothed.get("lateral_posture_label"),
+            "lateral_confidence": smoothed.get("lateral_confidence"),
+            "lateral_margin": smoothed.get("lateral_margin"),
+            "lateral_boundary": smoothed.get("lateral_boundary"),
+            "lateral_boundary_reasons": smoothed.get("lateral_boundary_reasons"),
+            "lateral_prototype_label": smoothed.get("lateral_prototype_label"),
+            "lateral_prototype_distance": smoothed.get("lateral_prototype_distance"),
+            "lateral_fallback_used": smoothed.get("lateral_fallback_used"),
+            "lateral_submodel_version": smoothed.get("lateral_submodel_version"),
+            "lateral_second_label": smoothed.get("lateral_second_label"),
+            "lateral_second_distance": smoothed.get("lateral_second_distance"),
+            "lateral_prototype_margin": smoothed.get("lateral_prototype_margin"),
+            "lateral_out_of_distribution": smoothed.get("lateral_out_of_distribution"),
         }
 
     def _blocked_output(self, occupancy: OccupancyResult) -> dict[str, object]:
