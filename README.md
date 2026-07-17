@@ -1,228 +1,286 @@
-# 食材保鲜管家
+# 16×16 Pressure-Mat Posture Recognition System
 
-这是一个冰箱食材管理作品集 Demo，包含两个交付形态：
-
-- Web Demo：可直接通过 GitHub Pages 打开。
-- Android App：真正的 Android WebView 外壳，可构建 debug APK 安装到手机。
-
-在线网页 Demo：
-
-[https://jennifer288.github.io/fridge-food-android-demo/](https://jennifer288.github.io/fridge-food-android-demo/)
+基于16×16薄膜压力传感器阵列的坐姿识别系统，支持CSV数据回放、占用状态判断、人体与物品区分、多阶段坐姿识别、Boundary安全回退以及桌面GUI可视化。
 
 ## 功能概览
 
-- 冰箱拍照识别模拟流程
-- `全部 / 肉蛋奶 / 蔬果 / 饮品 / 冷冻` 分类筛选
-- 食材新鲜度、剩余天数、储存区域和状态展示
-- 今天、明天、已过期、新鲜度低的提醒列表
-- 食材详情底部面板
-- `food_freshness_logic.c` 展示嵌入式/底层 C 逻辑组织方式
+- 读取16×16压力矩阵帧
+- 判断 EMPTY、低负载、OBJECT、UNKNOWN和HUMAN
+- 仅在稳定人体状态下进入坐姿识别
+- 使用随机森林、Multi-prototype和时间平滑完成文件级识别
+- 支持后靠坐姿二阶段细分类
+- 支持候选侧向姿势局部解析器
+- 16×16实时热力图显示
+- CSV播放、暂停、进度显示与结果导出
+- 导出模型版本和artifact哈希，保证结果可追溯
+- 不确定时使用Boundary安全回退，避免强制错误分类
 
-## Web Demo
-
-网页源码位于：
+## 项目结构
 
 ```text
-fridge-food-android-demo/
+posture-recognition-system/
+├── posture_csv_app.py
+├── recognizer_api.py
+├── API_DOCUMENT.md
+├── CURRENT_MODEL.md
+├── recognizer/
+│   ├── recognizer_api.py
+│   ├── occupancy_detector.py
+│   ├── seat_detector.py
+│   ├── seat_analyzer.py
+│   ├── feature_extractor.py
+│   ├── rf_recognizer.py
+│   ├── prototype_bank.py
+│   ├── smoothing.py
+│   ├── csv_gui.py
+│   ├── csv_gui_core.py
+│   ├── models/
+│   └── tests/
+└── posture_dataset_v2/
+    └── scripts/
 ```
 
-本地打开：
+原始CSV、开发数据和生成报告默认保存在本地，不提交到GitHub。
+
+## 环境要求
+
+推荐使用 Python 3.10 或更高版本。
+
+主要依赖包括：
+
+```text
+numpy
+pandas
+scikit-learn
+joblib
+tkinter
+```
+
+安装Python依赖：
 
 ```bash
-cd fridge-food-android-demo
-python3 -m http.server 8080
+python3 -m pip install numpy pandas scikit-learn joblib
 ```
 
-然后访问：
+macOS自带的Python环境通常包含Tkinter；如果GUI无法启动，请检查当前Python是否支持Tk。
 
-```text
-http://localhost:8080
-```
+## 启动桌面软件
 
-## Android WebView App
-
-Android 工程位于：
-
-```text
-android-app/
-```
-
-App 信息：
-
-- App 名称：`食材保鲜管家`
-- Package name：`com.jennifer.fridgefood`
-- minSdk：`23`
-- 实现方式：Android WebView
-- 本地入口：`file:///android_asset/fridge-food-android-demo/index.html`
-- 不申请相机权限；“拍照识别”仍使用 demo 模拟数据
-- 不依赖网络即可打开 App 主界面
-
-WebView 加载的离线资源位于：
-
-```text
-android-app/app/src/main/assets/fridge-food-android-demo/
-```
-
-## 构建 APK
-
-### 使用 Android Studio
-
-1. 打开 Android Studio。
-2. 选择 `Open`。
-3. 打开本仓库中的 `android-app/` 目录。
-4. 等待 Gradle Sync 完成。
-5. 选择 `Build > Build Bundle(s) / APK(s) > Build APK(s)`。
-6. 构建完成后，APK 位于：
-
-```text
-android-app/app/build/outputs/apk/debug/app-debug.apk
-```
-
-### 使用命令行
-
-需要本机安装 Android SDK，并设置 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT`。
+进入项目目录：
 
 ```bash
-cd android-app
-./gradlew assembleDebug
+cd "/path/to/posture-recognition-system"
 ```
 
-生成的 APK 路径：
-
-```text
-android-app/app/build/outputs/apk/debug/app-debug.apk
-```
-
-## GitHub Actions 下载 APK
-
-仓库包含 workflow：
-
-```text
-.github/workflows/build-android-apk.yml
-```
-
-每次 push 到 `main` 后会自动运行 `Build Android APK`，构建 debug APK 并上传 artifact。
-
-下载方式：
-
-1. 打开仓库的 `Actions` 页面。
-2. 选择最新的 `Build Android APK` run。
-3. 在页面底部 `Artifacts` 区域下载：
-
-```text
-fridge-food-android-debug-apk
-```
-
-解压后可得到：
-
-```text
-app-debug.apk
-```
-
-## 安装到 Android 手机
-
-### 方法一：手机直接安装
-
-1. 从 GitHub Actions 下载 `fridge-food-android-debug-apk`。
-2. 解压得到 `app-debug.apk`。
-3. 把 APK 传到 Android 手机。
-4. 在手机上打开 APK。
-5. 如果系统提示，允许“安装未知来源应用”。
-6. 安装完成后打开 `食材保鲜管家`。
-
-### 方法二：ADB 安装
-
-手机开启 USB 调试后运行：
-
-```bash
-adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
-```
-
-## C 逻辑说明
-
-核心 C 展示文件：
-
-```text
-fridge-food-android-demo/food_freshness_logic.c
-```
-
-Android App 当前不编译这个 C 文件；它作为嵌入式/Native 层逻辑展示，用 `enum`、`struct`、bit flag 和纯函数表达食材识别结果、新鲜度状态、临期提醒和分类筛选。
-
-## 验证
-
-网页逻辑测试：
-
-```bash
-node fridge-food-android-demo/tests/logic.test.js
-```
-
-C 语法检查：
-
-```bash
-clang -fsyntax-only fridge-food-android-demo/food_freshness_logic.c
-```
-
-Android 项目结构检查：
-
-```bash
-python3 android-app/tests/verify_android_project.py
-```
-
-Android APK 构建：
-
-```bash
-cd android-app
-./gradlew assembleDebug
-```
-
-## 16×16坐垫CSV识别软件
-
-本仓库同时包含本地电脑端坐姿识别软件。默认启动命令：
+启动当前默认模型：
 
 ```bash
 python3 posture_csv_app.py
 ```
 
-当前默认模型由 `recognizer/models/default_model.json` 指向
-`v2_2_candidate`，GUI 显示为 `V2.2（H3闭卷通过）`。
+当前默认模型由以下文件决定：
 
-历史版本仍可显式回退：
+```text
+recognizer/models/default_model.json
+```
+
+目前默认版本为：
+
+```text
+v2_2_candidate
+```
+
+GUI显示名称：
+
+```text
+V2.2（H3闭卷通过）
+```
+
+## 显式加载模型版本
 
 ```bash
 python3 posture_csv_app.py --model-version v1
 python3 posture_csv_app.py --model-version v2_candidate
 python3 posture_csv_app.py --model-version v2_1_candidate
 python3 posture_csv_app.py --model-version v2_2_candidate
-python3 posture_csv_app.py --model-version v2_3_candidate  # V2.3候选：侧向三类局部解析，未闭卷
+python3 posture_csv_app.py --model-version v2_3_candidate
+python3 posture_csv_app.py --model-version v2_3_1_candidate
+python3 posture_csv_app.py --model-version v2_4_candidate
+python3 posture_csv_app.py --model-version v2_4_1_candidate
+python3 posture_csv_app.py --model-version v2_4_2_candidate
+python3 posture_csv_app.py --model-version v2_4_3_candidate
 ```
 
-`v2_2_candidate` 是当前默认运行模型：父模型仍为 V2.1，仅在后靠相关
-窗口上进一步区分“后仰靠背坐”和“后靠/瘫坐类”；无法安全细分时显示
-安全回退标签“后靠坐姿”。
+除默认版本外，其他版本主要用于实验、诊断和回归测试。
 
-V2.2 在 H3 external holdout 晋级测试中：
+## 统一识别API
 
-- correct_accept：3/4
-- correct_fallback：1/4
-- wrong_accept：0/4
-- gate_miss：0/4
-- safe_resolution：4/4
+硬件端只需持续提供一个16×16压力帧：
 
-V2.1 在 holdout_batch_02 Phase 1 闭卷测试中：
+```python
+from recognizer_api import Recognizer
 
-- Boundary-aware 文件准确率：10/12 = 83.33%
-- V2 candidate：75.00%
-- V1：16.67%
-- wrong accepted files：0
-- object pressure entering posture model：0
+recognizer = Recognizer()
 
-限制：H1/H2 是 V2.2 development 数据；H3 已被用于晋级决策，不能再作为未来未见 holdout，也不能进入训练或调参。未来任何 V2.2 改动都必须使用全新的 H4 或后续批次做闭卷验证。
+frame = read_frame()  # numpy.ndarray, shape=(16, 16)
+result = recognizer.predict(frame)
+```
 
-CSV GUI 导出的 `frame_predictions.csv`、`posture_segments.csv` 和
-`summary.json` 会记录 `model_version`、`model_artifact_sha256`、
-`metadata_sha256`、`runtime_config_sha256`，以及 V2.2 的 submodel
-hash，便于追溯每份识别结果使用的模型。
+显式加载候选模型：
 
-### V2.3 Candidate
+```python
+recognizer = Recognizer(model_version="v2_4_3_candidate")
+```
 
-`v2_3_candidate` is candidate-only. It keeps V2.2 as the parent recognizer and adds a local lateral resolver for `标准侧坐` / `斜跨坐` / `侧身倚靠坐`, with `侧向坐姿` as the safe Boundary fallback. It is not the default model and still requires a fresh closed-book holdout before promotion.
+重置时间状态：
+
+```python
+recognizer.reset()
+```
+
+更多接口说明见：
+
+```text
+API_DOCUMENT.md
+```
+
+## 当前默认模型：V2.2
+
+V2.2以V2.1为父模型，并增加后靠坐姿二阶段分类器，用于区分：
+
+- 后仰靠背坐
+- 后靠/瘫坐类
+
+细分类证据不足时安全回退为：
+
+```text
+后靠坐姿
+```
+
+H3 external holdout结果：
+
+```text
+correct_accept:   3/4
+correct_fallback: 1/4
+wrong_accept:     0/4
+gate_miss:        0/4
+safe_resolution:  4/4
+```
+
+因此V2.2目前仍是默认运行版本。
+
+## 侧向姿势候选版本
+
+后续候选版本探索了侧向姿势识别。
+
+当前候选标签体系将：
+
+```text
+标准侧坐 + 侧身倚靠坐
+```
+
+合并为：
+
+```text
+侧向坐姿
+```
+
+同时保留：
+
+```text
+斜跨坐
+```
+
+不确定时回退为：
+
+```text
+侧向姿势
+```
+
+这些版本目前属于实验候选，没有替换默认V2.2。可使用以下命令体验最新候选：
+
+```bash
+python3 posture_csv_app.py --model-version v2_4_3_candidate
+```
+
+## GUI说明
+
+桌面GUI支持：
+
+- 选择并加载CSV
+- 播放、暂停和重置
+- 16×16正方形压力热力图
+- 前、后、左、右方向标识
+- 当前Occupancy状态
+- 父模型和局部分类结果
+- Boundary与安全回退状态
+- 最终显示标签
+- 手动查看可滚动模型详情
+- 导出逐帧预测、姿势片段和汇总结果
+
+CSV播放完成后只更新状态栏，不会自动弹出超长模型JSON窗口。
+
+## 导出文件
+
+GUI可导出：
+
+```text
+frame_predictions.csv
+posture_segments.csv
+summary.json
+```
+
+导出内容包括：
+
+- 模型版本
+- 父模型版本
+- 子模型版本
+- 最终姿势标签
+- Boundary与fallback信息
+- 模型artifact哈希
+- 文件级统计结果
+
+## 自动化测试
+
+运行核心测试：
+
+```bash
+python3 -m unittest recognizer.tests.test_recognizer_core
+```
+
+测试覆盖：
+
+- Occupancy与物品拦截
+- 模型版本加载
+- 后靠二阶段识别
+- 侧向候选解析器
+- Boundary安全回退
+- 非侧向回归保护
+- GUI热力图几何
+- CSV播放完成逻辑
+- 模型详情窗口
+- 导出字段完整性
+
+## 数据与验证说明
+
+为避免数据泄漏：
+
+- 训练和验证按完整CSV文件分组
+- 不采用同一CSV窗口随机拆分
+- 已使用的development数据不能再次作为闭卷数据
+- 已使用的external holdout不能加入训练或调参
+- 模型发生修改后，需要新的独立holdout才能重新宣称闭卷通过
+
+大型原始数据、报告和运行输出通过 `.gitignore` 保留在本地。
+
+## 当前限制
+
+- 系统主要面向普通办公椅和16×16座面压力垫
+- 座面传感器无法直接观察肩膀、上半身角度或靠背接触
+- 躺卧类暂不适用于普通办公椅场景
+- 候选侧向模型尚未替换正式默认版本
+- 当前仓库主要提供CSV回放接口；实时硬件接入可通过统一Recognizer API完成
+
+## License
+
+本项目目前用于个人作品集、研究与演示。
