@@ -123,6 +123,15 @@ class FramePrediction:
     lateral_physical_evidence_reasons: str | None = None
     selected_final_branch: str | None = None
     final_override_reason: str | None = None
+    lateral_gate_strong_evidence: str | None = None
+    lateral_gate_soft_warnings: str | None = None
+    lateral_gate_hard_reject_reasons: str | None = None
+    front_back_support_warning: bool | None = None
+    front_back_support_hard_reject: bool | None = None
+    parent_prototype_agreement: bool | None = None
+    lateral_physical_evidence_score: float | None = None
+    lateral_gate_decision: str | None = None
+    lateral_gate_decision_reason: str | None = None
     total_pressure: float = 0.0
     active_points: int = 0
     max_pressure: float = 0.0
@@ -398,6 +407,15 @@ class CsvRecognitionSession:
             "lateral_normalization_confidence",
             "lateral_physical_evidence_passed",
             "lateral_physical_evidence_reasons",
+            "lateral_gate_strong_evidence",
+            "lateral_gate_soft_warnings",
+            "lateral_gate_hard_reject_reasons",
+            "front_back_support_warning",
+            "front_back_support_hard_reject",
+            "parent_prototype_agreement",
+            "lateral_physical_evidence_score",
+            "lateral_gate_decision",
+            "lateral_gate_decision_reason",
             "selected_final_branch",
             "final_override_reason",
             "total_pressure",
@@ -588,6 +606,15 @@ def frame_record_from_result(
         lateral_normalization_confidence=_optional_float(result.get("lateral_normalization_confidence")) if is_human else None,
         lateral_physical_evidence_passed=bool(result.get("lateral_physical_evidence_passed")) if is_human and result.get("lateral_physical_evidence_passed") is not None else None,
         lateral_physical_evidence_reasons=str(result.get("lateral_physical_evidence_reasons")) if is_human and result.get("lateral_physical_evidence_reasons") else None,
+        lateral_gate_strong_evidence=str(result.get("lateral_gate_strong_evidence")) if is_human and result.get("lateral_gate_strong_evidence") else None,
+        lateral_gate_soft_warnings=str(result.get("lateral_gate_soft_warnings")) if is_human and result.get("lateral_gate_soft_warnings") else None,
+        lateral_gate_hard_reject_reasons=str(result.get("lateral_gate_hard_reject_reasons")) if is_human and result.get("lateral_gate_hard_reject_reasons") else None,
+        front_back_support_warning=bool(result.get("front_back_support_warning")) if is_human and result.get("front_back_support_warning") is not None else None,
+        front_back_support_hard_reject=bool(result.get("front_back_support_hard_reject")) if is_human and result.get("front_back_support_hard_reject") is not None else None,
+        parent_prototype_agreement=bool(result.get("parent_prototype_agreement")) if is_human and result.get("parent_prototype_agreement") is not None else None,
+        lateral_physical_evidence_score=_optional_float(result.get("lateral_physical_evidence_score")) if is_human else None,
+        lateral_gate_decision=str(result.get("lateral_gate_decision")) if is_human and result.get("lateral_gate_decision") else None,
+        lateral_gate_decision_reason=str(result.get("lateral_gate_decision_reason")) if is_human and result.get("lateral_gate_decision_reason") else None,
         selected_final_branch=str(result.get("selected_final_branch")) if is_human and result.get("selected_final_branch") else None,
         final_override_reason=str(result.get("final_override_reason")) if is_human and result.get("final_override_reason") else None,
         total_pressure=round(total, 4),

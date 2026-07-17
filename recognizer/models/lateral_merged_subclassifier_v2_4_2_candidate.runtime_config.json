@@ -1,0 +1,46 @@
+{
+  "model_version": "v2_4_2_candidate",
+  "display_name": "V2.4.2候选（斜跨门控修复，未闭卷）",
+  "parent_model_version": "v2_2_candidate",
+  "lateral_submodel_version": "lateral_merged_subclassifier_v2_4_2_candidate",
+  "label_taxonomy_version": "lateral_merge_v1",
+  "formal_labels": [
+    "侧向坐姿",
+    "斜跨坐"
+  ],
+  "fallback_label": "侧向姿势",
+  "lateral_gate_rules": [
+    "parent/raw/second/prototype candidate in 标准侧坐/侧身倚靠坐/斜跨坐",
+    "parent boundary near lateral candidate",
+    "seat-observable physical single-side loading gate with front/back as soft warning under strong lateral evidence",
+    "V2.4.2 early gate: parent/prototype lateral agreement with 3 consecutive front/back-only soft-warning frames",
+    "leanback two-stage gate has priority"
+  ],
+  "boundary_rules": [
+    "low_classifier_margin",
+    "low_prototype_margin",
+    "classifier_prototype_conflict",
+    "side_vs_diagonal_overlap",
+    "out_of_distribution",
+    "gate_uncertain",
+    "leanback_lateral_conflict"
+  ],
+  "confidence_threshold": 0.2,
+  "class_distance_centers": {
+    "侧向坐姿": 1.217573,
+    "斜跨坐": 2.556111
+  },
+  "class_distance_scales": {
+    "侧向坐姿": 2.329222,
+    "斜跨坐": 2.25
+  },
+  "margin_thresholds": {
+    "侧向坐姿": 0.18,
+    "斜跨坐": 0.08
+  },
+  "distance_z_thresholds": {
+    "侧向坐姿": 4.0,
+    "斜跨坐": 7.5
+  },
+  "default_model_pointer_changed": false
+}
