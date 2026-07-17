@@ -445,6 +445,8 @@ class RecognizerApiTest(unittest.TestCase):
         v22_candidate_api = Recognizer(model_version="v2_2_candidate", analyzer=FakeAnalyzer())
         v23_candidate_api = Recognizer(model_version="v2_3_candidate", analyzer=FakeAnalyzer())
         v231_candidate_api = Recognizer(model_version="v2_3_1_candidate", analyzer=FakeAnalyzer())
+        v24_candidate_api = Recognizer(model_version="v2_4_candidate", analyzer=FakeAnalyzer())
+        v241_candidate_api = Recognizer(model_version="v2_4_1_candidate", analyzer=FakeAnalyzer())
 
         self.assertEqual(v1_api.model_path.name, "rf_posture_v1.joblib")
         self.assertEqual(v1_api.prototype_bank_path.name, "prototype_bank_v1.json")
@@ -460,6 +462,12 @@ class RecognizerApiTest(unittest.TestCase):
         self.assertEqual(v231_candidate_api.model_path.name, "rf_posture_v2_1_candidate.joblib")
         self.assertEqual(v231_candidate_api.submodel_path.name, "leanback_subclassifier_v2_2_candidate.joblib")
         self.assertEqual(v231_candidate_api.lateral_submodel_path.name, "lateral_subclassifier_v2_3_1_candidate.joblib")
+        self.assertEqual(v24_candidate_api.model_path.name, "rf_posture_v2_1_candidate.joblib")
+        self.assertEqual(v24_candidate_api.submodel_path.name, "leanback_subclassifier_v2_2_candidate.joblib")
+        self.assertEqual(v24_candidate_api.lateral_submodel_path.name, "lateral_merged_subclassifier_v2_4_candidate.joblib")
+        self.assertEqual(v241_candidate_api.model_path.name, "rf_posture_v2_1_candidate.joblib")
+        self.assertEqual(v241_candidate_api.submodel_path.name, "leanback_subclassifier_v2_2_candidate.joblib")
+        self.assertEqual(v241_candidate_api.lateral_submodel_path.name, "lateral_merged_subclassifier_v2_4_1_candidate.joblib")
 
     def test_root_import_path_is_available_for_hardware_integration(self) -> None:
         from recognizer_api import Recognizer
@@ -836,6 +844,9 @@ class CsvGuiCoreTest(unittest.TestCase):
         self.assertEqual(model_version_display_name("v2_1_candidate"), "V2.1（Phase 1闭卷通过）")
         self.assertEqual(model_version_display_name("v2_2_candidate"), "V2.2（H3闭卷通过）")
         self.assertEqual(model_version_display_name("v2_3_candidate"), "V2.3候选（侧向三类局部解析，未闭卷）")
+        self.assertEqual(model_version_display_name("v2_3_1_candidate"), "V2.3.1候选（侧向链路修复，未闭卷）")
+        self.assertEqual(model_version_display_name("v2_4_candidate"), "V2.4候选（侧向标签合并，未闭卷）")
+        self.assertEqual(model_version_display_name("v2_4_1_candidate"), "V2.4.1候选（侧向合并边界修复，未闭卷）")
         self.assertEqual(default_gui_model_version(), "v2_2_candidate")
 
 
@@ -1319,6 +1330,195 @@ class LateralSubclassifierTest(unittest.TestCase):
         self.assertTrue(first["lateral_subclassifier_triggered"])
         self.assertEqual(second["label"], first["label"])
         self.assertEqual(second["final_priority_branch"], "lateral_temporal_hold")
+
+
+class LateralMergedSubclassifierTest(unittest.TestCase):
+    def test_original_lateral_labels_map_to_v2_4_merged_taxonomy(self) -> None:
+        from recognizer.lateral_merged_subclassifier import (
+            DIAGONAL_SITTING_LABEL as MERGED_DIAGONAL_LABEL,
+            LATERAL_UNCERTAIN_LABEL,
+            SIDE_SITTING_OR_LEANING_LABEL,
+            merged_lateral_label,
+        )
+
+        self.assertEqual(merged_lateral_label(STANDARD_SIDE_SITTING_LABEL), SIDE_SITTING_OR_LEANING_LABEL)
+        self.assertEqual(merged_lateral_label(SIDE_LEANING_LABEL), SIDE_SITTING_OR_LEANING_LABEL)
+        self.assertEqual(merged_lateral_label(DIAGONAL_SITTING_LABEL), MERGED_DIAGONAL_LABEL)
+        self.assertEqual(merged_lateral_label(LATERAL_BOUNDARY_LABEL), LATERAL_UNCERTAIN_LABEL)
+
+    def test_v2_4_parent_side_labels_are_normalized_for_display(self) -> None:
+        from recognizer.lateral_merged_subclassifier import normalize_parent_lateral_display
+
+        payload = {
+            "label": STANDARD_SIDE_SITTING_LABEL,
+            "final_display_label": STANDARD_SIDE_SITTING_LABEL,
+            "confidence": 0.88,
+            "margin": 0.30,
+            "is_boundary": False,
+        }
+
+        normalized = normalize_parent_lateral_display(payload)
+
+        self.assertEqual(normalized["label"], "侧向坐姿")
+        self.assertEqual(normalized["final_display_label"], "侧向坐姿")
+        self.assertEqual(normalized["parent_raw_lateral_label"], STANDARD_SIDE_SITTING_LABEL)
+        self.assertEqual(normalized["label_taxonomy_version"], "lateral_merge_v1")
+
+    def test_v2_4_boundary_fallback_is_distinct_from_merged_side_label(self) -> None:
+        from recognizer.lateral_merged_subclassifier import (
+            LATERAL_UNCERTAIN_LABEL,
+            SIDE_SITTING_OR_LEANING_LABEL,
+            LateralMergedFineModel,
+        )
+
+        dim = len(LATERAL_FEATURE_NAMES)
+        model = LateralMergedFineModel(
+            prototypes={
+                SIDE_SITTING_OR_LEANING_LABEL: [np.zeros(dim, dtype=float)],
+                DIAGONAL_SITTING_LABEL: [np.ones(dim, dtype=float) * 0.04],
+            },
+            prototype_sources={SIDE_SITTING_OR_LEANING_LABEL: ["side"], DIAGONAL_SITTING_LABEL: ["diag"]},
+            prototype_subtypes={SIDE_SITTING_OR_LEANING_LABEL: ["标准侧坐"], DIAGONAL_SITTING_LABEL: ["斜跨坐"]},
+            feature_mean=np.zeros(dim, dtype=float),
+            feature_scale=np.ones(dim, dtype=float),
+            margin_threshold=0.08,
+            distance_thresholds={SIDE_SITTING_OR_LEANING_LABEL: 10.0, DIAGONAL_SITTING_LABEL: 10.0},
+        )
+
+        result = model.predict_from_features(np.ones(dim, dtype=float) * 0.02)
+
+        self.assertEqual(result["lateral_merged_label"], LATERAL_UNCERTAIN_LABEL)
+        self.assertNotEqual(result["lateral_merged_label"], SIDE_SITTING_OR_LEANING_LABEL)
+        self.assertTrue(result["lateral_fallback_used"])
+
+    def test_v2_4_two_stage_outputs_merged_side_label_and_keeps_parent_diagnostics(self) -> None:
+        from recognizer.lateral_merged_subclassifier import (
+            SIDE_SITTING_OR_LEANING_LABEL,
+            LateralMergedFineModel,
+            TwoStageLateralMergedRecognizer,
+        )
+
+        class Parent:
+            def predict_posture(self, window: np.ndarray) -> dict[str, object]:
+                return {
+                    "label": STANDARD_SIDE_SITTING_LABEL,
+                    "raw_label": STANDARD_SIDE_SITTING_LABEL,
+                    "confidence": 0.89,
+                    "second_label": DIAGONAL_SITTING_LABEL,
+                    "margin": 0.34,
+                    "is_boundary": False,
+                    "prototype_diagnosis": {"label": STANDARD_SIDE_SITTING_LABEL},
+                    "subclassifier_triggered": False,
+                }
+
+        dim = len(LATERAL_FEATURE_NAMES)
+        model = LateralMergedFineModel(
+            prototypes={
+                SIDE_SITTING_OR_LEANING_LABEL: [np.zeros(dim, dtype=float)],
+                DIAGONAL_SITTING_LABEL: [np.ones(dim, dtype=float) * 4.0],
+            },
+            prototype_sources={SIDE_SITTING_OR_LEANING_LABEL: ["side"], DIAGONAL_SITTING_LABEL: ["diag"]},
+            prototype_subtypes={SIDE_SITTING_OR_LEANING_LABEL: ["标准侧坐"], DIAGONAL_SITTING_LABEL: ["斜跨坐"]},
+            feature_mean=np.zeros(dim, dtype=float),
+            feature_scale=np.ones(dim, dtype=float),
+            margin_threshold=0.01,
+            distance_thresholds={SIDE_SITTING_OR_LEANING_LABEL: 100.0, DIAGONAL_SITTING_LABEL: 100.0},
+        )
+        recognizer = TwoStageLateralMergedRecognizer(Parent(), model)
+        frame = np.zeros((16, 16), dtype=float)
+        frame[5:13, 0:9] = 120.0
+
+        payload = recognizer.predict_posture(np.stack([frame] * 8))
+
+        self.assertTrue(payload["lateral_subclassifier_triggered"])
+        self.assertEqual(payload["label"], "侧向坐姿")
+        self.assertEqual(payload["final_display_label"], "侧向坐姿")
+        self.assertEqual(payload["parent_raw_lateral_label"], STANDARD_SIDE_SITTING_LABEL)
+        self.assertEqual(payload["lateral_merged_label"], "侧向坐姿")
+        self.assertEqual(payload["label_taxonomy_version"], "lateral_merge_v1")
+
+    def test_v2_4_1_does_not_normalize_parent_side_label_without_stable_lateral_evidence(self) -> None:
+        from recognizer.lateral_merged_subclassifier_v241 import normalize_parent_lateral_display
+
+        parent = {
+            "label": STANDARD_SIDE_SITTING_LABEL,
+            "final_display_label": STANDARD_SIDE_SITTING_LABEL,
+            "confidence": 0.86,
+            "margin": 0.22,
+            "is_boundary": False,
+        }
+        features = {
+            "left_share": 0.51,
+            "right_share": 0.49,
+            "active_area_ratio": 0.34,
+            "front_share": 0.50,
+            "back_share": 0.50,
+            "row_8_11_share": 0.34,
+            "cop_y": 6.7,
+        }
+
+        normalized = normalize_parent_lateral_display(parent, lateral_gate_active=False, physical_features=features, temporal_state="inactive")
+
+        self.assertEqual(normalized["label"], STANDARD_SIDE_SITTING_LABEL)
+        self.assertFalse(normalized["lateral_normalization_applied"])
+        self.assertEqual(normalized["lateral_normalization_reason"], "insufficient_stable_lateral_evidence")
+
+    def test_v2_4_1_normalizes_parent_side_label_only_with_physical_and_temporal_evidence(self) -> None:
+        from recognizer.lateral_merged_subclassifier_v241 import normalize_parent_lateral_display
+
+        parent = {
+            "label": SIDE_LEANING_LABEL,
+            "final_display_label": SIDE_LEANING_LABEL,
+            "confidence": 0.87,
+            "margin": 0.33,
+            "is_boundary": False,
+        }
+        features = {
+            "left_share": 0.74,
+            "right_share": 0.26,
+            "active_area_ratio": 0.36,
+            "front_share": 0.50,
+            "back_share": 0.50,
+            "row_4_7_share": 0.30,
+            "row_8_11_share": 0.35,
+            "cop_y": 6.7,
+        }
+
+        normalized = normalize_parent_lateral_display(parent, lateral_gate_active=True, physical_features=features, temporal_state="active")
+
+        self.assertEqual(normalized["label"], "侧向坐姿")
+        self.assertTrue(normalized["lateral_normalization_applied"])
+        self.assertTrue(normalized["lateral_physical_evidence_passed"])
+        self.assertEqual(normalized["selected_final_branch"], "parent_lateral_label_normalized")
+
+    def test_v2_4_1_accepts_clear_diagonal_with_class_specific_distance(self) -> None:
+        from recognizer.lateral_merged_subclassifier_v241 import (
+            DIAGONAL_SITTING_LABEL as MERGED_DIAGONAL,
+            SIDE_SITTING_OR_LEANING_LABEL,
+            LateralMergedFineModelV241,
+        )
+
+        dim = len(LATERAL_FEATURE_NAMES)
+        side_proto = np.zeros(dim, dtype=float)
+        diag_proto = np.ones(dim, dtype=float) * 2.0
+        model = LateralMergedFineModelV241(
+            prototypes={SIDE_SITTING_OR_LEANING_LABEL: [side_proto], MERGED_DIAGONAL: [diag_proto]},
+            prototype_sources={SIDE_SITTING_OR_LEANING_LABEL: ["side"], MERGED_DIAGONAL: ["diag"]},
+            prototype_subtypes={SIDE_SITTING_OR_LEANING_LABEL: ["标准侧坐"], MERGED_DIAGONAL: ["斜跨坐"]},
+            feature_mean=np.zeros(dim, dtype=float),
+            feature_scale=np.ones(dim, dtype=float),
+            class_distance_centers={SIDE_SITTING_OR_LEANING_LABEL: 0.0, MERGED_DIAGONAL: 0.0},
+            class_distance_scales={SIDE_SITTING_OR_LEANING_LABEL: 1.0, MERGED_DIAGONAL: 4.0},
+            margin_thresholds={SIDE_SITTING_OR_LEANING_LABEL: 0.20, MERGED_DIAGONAL: 0.20},
+            distance_z_thresholds={SIDE_SITTING_OR_LEANING_LABEL: 3.0, MERGED_DIAGONAL: 3.0},
+        )
+
+        result = model.predict_from_features(np.ones(dim, dtype=float) * 2.05)
+
+        self.assertEqual(result["lateral_merged_label"], MERGED_DIAGONAL)
+        self.assertFalse(result["lateral_boundary"])
+        self.assertFalse(result["lateral_fallback_used"])
+
 
 class LeanbackSubclassifierTest(unittest.TestCase):
     def test_gate_only_runs_for_leanback_related_parent_results(self) -> None:

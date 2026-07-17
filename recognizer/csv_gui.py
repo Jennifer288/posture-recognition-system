@@ -512,6 +512,8 @@ def model_version_display_name(model_version: str) -> str:
         "v2_2_candidate": "V2.2（H3闭卷通过）",
         "v2_3_candidate": "V2.3候选（侧向三类局部解析，未闭卷）",
         "v2_3_1_candidate": "V2.3.1候选（侧向链路修复，未闭卷）",
+        "v2_4_candidate": "V2.4候选（侧向标签合并，未闭卷）",
+        "v2_4_1_candidate": "V2.4.1候选（侧向合并边界修复，未闭卷）",
     }
     return names.get(model_version, model_version)
 
@@ -526,7 +528,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--model-version",
         default=default_gui_model_version(),
-        choices=["v1", "v2_candidate", "v2_1_candidate", "v2_2_candidate", "v2_3_candidate"],
+        choices=["v1", "v2_candidate", "v2_1_candidate", "v2_2_candidate", "v2_3_candidate", "v2_3_1_candidate", "v2_4_candidate", "v2_4_1_candidate"],
         help="Recognizer model version to load. Default follows recognizer/models/default_model.json.",
     )
     args = parser.parse_args(argv)

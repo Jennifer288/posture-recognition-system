@@ -102,10 +102,27 @@ class FramePrediction:
     lateral_temporal_state: str | None = None
     lateral_stable_label: str | None = None
     lateral_fallback_requested: bool | None = None
+    lateral_merged_label: str | None = None
+    lateral_prototype_subtype: str | None = None
+    lateral_second_subtype: str | None = None
+    parent_raw_lateral_label: str | None = None
+    label_taxonomy_version: str | None = None
     final_priority_branch: str | None = None
     selected_branch: str | None = None
     override_reason: str | None = None
     fallback_reason: str | None = None
+    lateral_gate_candidate: bool | None = None
+    lateral_distance_z: float | None = None
+    lateral_classifier_label: str | None = None
+    lateral_prototype_source: str | None = None
+    lateral_second_prototype_source: str | None = None
+    lateral_normalization_applied: bool | None = None
+    lateral_normalization_reason: str | None = None
+    lateral_normalization_confidence: float | None = None
+    lateral_physical_evidence_passed: bool | None = None
+    lateral_physical_evidence_reasons: str | None = None
+    selected_final_branch: str | None = None
+    final_override_reason: str | None = None
     total_pressure: float = 0.0
     active_points: int = 0
     max_pressure: float = 0.0
@@ -362,10 +379,27 @@ class CsvRecognitionSession:
             "lateral_temporal_state",
             "lateral_stable_label",
             "lateral_fallback_requested",
+            "lateral_merged_label",
+            "lateral_prototype_subtype",
+            "lateral_second_subtype",
+            "parent_raw_lateral_label",
+            "label_taxonomy_version",
             "final_priority_branch",
             "selected_branch",
             "override_reason",
             "fallback_reason",
+            "lateral_gate_candidate",
+            "lateral_distance_z",
+            "lateral_classifier_label",
+            "lateral_prototype_source",
+            "lateral_second_prototype_source",
+            "lateral_normalization_applied",
+            "lateral_normalization_reason",
+            "lateral_normalization_confidence",
+            "lateral_physical_evidence_passed",
+            "lateral_physical_evidence_reasons",
+            "selected_final_branch",
+            "final_override_reason",
             "total_pressure",
             "active_points",
             "max_pressure",
@@ -535,10 +569,27 @@ def frame_record_from_result(
         lateral_temporal_state=str(result.get("lateral_temporal_state")) if is_human and result.get("lateral_temporal_state") else None,
         lateral_stable_label=str(result.get("lateral_stable_label")) if is_human and result.get("lateral_stable_label") else None,
         lateral_fallback_requested=bool(result.get("lateral_fallback_requested")) if is_human and result.get("lateral_fallback_requested") is not None else None,
+        lateral_merged_label=str(result.get("lateral_merged_label")) if is_human and result.get("lateral_merged_label") else None,
+        lateral_prototype_subtype=str(result.get("lateral_prototype_subtype")) if is_human and result.get("lateral_prototype_subtype") else None,
+        lateral_second_subtype=str(result.get("lateral_second_subtype")) if is_human and result.get("lateral_second_subtype") else None,
+        parent_raw_lateral_label=str(result.get("parent_raw_lateral_label")) if is_human and result.get("parent_raw_lateral_label") else None,
+        label_taxonomy_version=str(result.get("label_taxonomy_version")) if is_human and result.get("label_taxonomy_version") else None,
         final_priority_branch=str(result.get("final_priority_branch")) if is_human and result.get("final_priority_branch") else None,
         selected_branch=str(result.get("selected_branch")) if is_human and result.get("selected_branch") else None,
         override_reason=str(result.get("override_reason")) if is_human and result.get("override_reason") else None,
         fallback_reason=str(result.get("fallback_reason")) if is_human and result.get("fallback_reason") else None,
+        lateral_gate_candidate=bool(result.get("lateral_gate_candidate")) if is_human and result.get("lateral_gate_candidate") is not None else None,
+        lateral_distance_z=_optional_float(result.get("lateral_distance_z")) if is_human else None,
+        lateral_classifier_label=str(result.get("lateral_classifier_label")) if is_human and result.get("lateral_classifier_label") else None,
+        lateral_prototype_source=str(result.get("lateral_prototype_source")) if is_human and result.get("lateral_prototype_source") else None,
+        lateral_second_prototype_source=str(result.get("lateral_second_prototype_source")) if is_human and result.get("lateral_second_prototype_source") else None,
+        lateral_normalization_applied=bool(result.get("lateral_normalization_applied")) if is_human and result.get("lateral_normalization_applied") is not None else None,
+        lateral_normalization_reason=str(result.get("lateral_normalization_reason")) if is_human and result.get("lateral_normalization_reason") else None,
+        lateral_normalization_confidence=_optional_float(result.get("lateral_normalization_confidence")) if is_human else None,
+        lateral_physical_evidence_passed=bool(result.get("lateral_physical_evidence_passed")) if is_human and result.get("lateral_physical_evidence_passed") is not None else None,
+        lateral_physical_evidence_reasons=str(result.get("lateral_physical_evidence_reasons")) if is_human and result.get("lateral_physical_evidence_reasons") else None,
+        selected_final_branch=str(result.get("selected_final_branch")) if is_human and result.get("selected_final_branch") else None,
+        final_override_reason=str(result.get("final_override_reason")) if is_human and result.get("final_override_reason") else None,
         total_pressure=round(total, 4),
         active_points=active_points,
         max_pressure=round(float(np.asarray(frame).max()) if np.asarray(frame).size else 0.0, 4),

@@ -1,0 +1,38 @@
+{
+  "model_version": "v2_4_candidate",
+  "display_name": "V2.4候选（侧向标签合并，未闭卷）",
+  "parent_model_version": "v2_2_candidate",
+  "lateral_submodel_version": "lateral_merged_subclassifier_v2_4_candidate",
+  "label_taxonomy_version": "lateral_merge_v1",
+  "formal_labels": [
+    "侧向坐姿",
+    "斜跨坐"
+  ],
+  "fallback_label": "侧向姿势",
+  "lateral_gate_rules": [
+    "parent/raw/second/prototype candidate in 标准侧坐/侧身倚靠坐/斜跨坐",
+    "parent boundary near lateral candidate",
+    "seat-observable physical single-side loading gate",
+    "leanback two-stage gate has priority"
+  ],
+  "boundary_rules": [
+    "low_classifier_margin",
+    "low_prototype_margin",
+    "classifier_prototype_conflict",
+    "side_vs_diagonal_overlap",
+    "out_of_distribution",
+    "gate_uncertain",
+    "leanback_lateral_conflict"
+  ],
+  "margin_threshold": 0.08,
+  "confidence_threshold": 0.5,
+  "distance_thresholds": {
+    "侧向坐姿": 6.362174,
+    "斜跨坐": 5.840901
+  },
+  "pair_margin_thresholds": {
+    "侧向坐姿::斜跨坐": 2.593381,
+    "斜跨坐::斜跨坐": 0.24663
+  },
+  "default_model_pointer_changed": false
+}

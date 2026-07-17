@@ -10,6 +10,11 @@ import numpy as np
 from .feature_extractor import as_frame, as_frames
 from .leanback_subclassifier import TwoStageLeanbackRecognizer, load_leanback_fine_model
 from .lateral_subclassifier import TwoStageLateralRecognizer, load_lateral_fine_model
+from .lateral_merged_subclassifier import TwoStageLateralMergedRecognizer, load_lateral_merged_fine_model
+from .lateral_merged_subclassifier_v241 import (
+    TwoStageLateralMergedRecognizerV241,
+    load_lateral_merged_fine_model_v241,
+)
 from .occupancy_detector import OccupancyDetector
 from .rf_recognizer import load_hybrid_recognizer
 from .seat_analyzer import SeatAnalyzer
@@ -75,6 +80,32 @@ MODEL_VERSION_ARTIFACTS = {
         "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_prototype_bank_v2_3_1_candidate.json",
         "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_subclassifier_v2_3_1_candidate.runtime_config.json",
         "bundle": PACKAGE_DIR / "models" / "v2_3_1_candidate.model_bundle.json",
+    },
+    "v2_4_candidate": {
+        "model": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.joblib",
+        "prototype_bank": PACKAGE_DIR / "models" / "prototype_bank_v2_1_candidate.json",
+        "metadata": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.metadata.json",
+        "runtime_config": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.runtime_config.json",
+        "submodel": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.joblib",
+        "subprototype_bank": PACKAGE_DIR / "models" / "leanback_prototype_bank_v2_2_candidate.json",
+        "subruntime_config": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.runtime_config.json",
+        "lateral_submodel": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_candidate.joblib",
+        "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_merged_prototype_bank_v2_4_candidate.json",
+        "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_candidate.runtime_config.json",
+        "bundle": PACKAGE_DIR / "models" / "v2_4_candidate.model_bundle.json",
+    },
+    "v2_4_1_candidate": {
+        "model": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.joblib",
+        "prototype_bank": PACKAGE_DIR / "models" / "prototype_bank_v2_1_candidate.json",
+        "metadata": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.metadata.json",
+        "runtime_config": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.runtime_config.json",
+        "submodel": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.joblib",
+        "subprototype_bank": PACKAGE_DIR / "models" / "leanback_prototype_bank_v2_2_candidate.json",
+        "subruntime_config": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.runtime_config.json",
+        "lateral_submodel": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_1_candidate.joblib",
+        "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_merged_prototype_bank_v2_4_1_candidate.json",
+        "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_1_candidate.runtime_config.json",
+        "bundle": PACKAGE_DIR / "models" / "v2_4_1_candidate.model_bundle.json",
     },
 }
 
@@ -221,7 +252,7 @@ class Recognizer:
             raise FileNotFoundError(f"RF V1 model not found: {self.model_path}")
         prototype_path = self.prototype_bank_path if self.prototype_bank_path.exists() else None
         parent = load_hybrid_recognizer(self.model_path, prototype_path)
-        if self.model_version not in {"v2_2_candidate", "v2_3_candidate", "v2_3_1_candidate"}:
+        if self.model_version not in {"v2_2_candidate", "v2_3_candidate", "v2_3_1_candidate", "v2_4_candidate", "v2_4_1_candidate"}:
             return parent
         if self.submodel_path is None or not Path(self.submodel_path).exists():
             raise FileNotFoundError(f"V2.2 leanback submodel not found: {self.submodel_path}")
@@ -235,7 +266,23 @@ class Recognizer:
         if self.model_version == "v2_2_candidate":
             return v22
         if self.lateral_submodel_path is None or not Path(self.lateral_submodel_path).exists():
-            raise FileNotFoundError(f"V2.3 lateral submodel not found: {self.lateral_submodel_path}")
+            raise FileNotFoundError(f"V2.3/V2.4 lateral submodel not found: {self.lateral_submodel_path}")
+        if self.model_version == "v2_4_candidate":
+            lateral_model = load_lateral_merged_fine_model(self.lateral_submodel_path)
+            return TwoStageLateralMergedRecognizer(
+                v22,
+                lateral_model,
+                model_version=self.model_version,
+                parent_model_version="v2_2_candidate",
+            )
+        if self.model_version == "v2_4_1_candidate":
+            lateral_model = load_lateral_merged_fine_model_v241(self.lateral_submodel_path)
+            return TwoStageLateralMergedRecognizerV241(
+                v22,
+                lateral_model,
+                model_version=self.model_version,
+                parent_model_version="v2_2_candidate",
+            )
         lateral_model = load_lateral_fine_model(self.lateral_submodel_path)
         return TwoStageLateralRecognizer(
             v22,
@@ -350,10 +397,27 @@ class Recognizer:
             "lateral_temporal_state",
             "lateral_stable_label",
             "lateral_fallback_requested",
+            "lateral_merged_label",
+            "lateral_prototype_subtype",
+            "lateral_second_subtype",
+            "parent_raw_lateral_label",
+            "label_taxonomy_version",
             "final_priority_branch",
             "selected_branch",
             "override_reason",
             "fallback_reason",
+            "lateral_gate_candidate",
+            "lateral_distance_z",
+            "lateral_classifier_label",
+            "lateral_prototype_source",
+            "lateral_second_prototype_source",
+            "lateral_normalization_applied",
+            "lateral_normalization_reason",
+            "lateral_normalization_confidence",
+            "lateral_physical_evidence_passed",
+            "lateral_physical_evidence_reasons",
+            "selected_final_branch",
+            "final_override_reason",
         ]:
             payload[key] = raw.get(key) if is_human else None
         return payload

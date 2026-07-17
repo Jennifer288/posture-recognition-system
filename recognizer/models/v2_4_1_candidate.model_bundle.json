@@ -1,0 +1,18 @@
+{
+  "model_version": "v2_4_1_candidate",
+  "display_name": "V2.4.1候选（侧向合并边界修复，未闭卷）",
+  "parent_model_version": "v2_2_candidate",
+  "parent_bundle": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/v2_2_candidate.model_bundle.json",
+  "parent_rf_model": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/rf_posture_v2_1_candidate.joblib",
+  "parent_metadata": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/rf_posture_v2_1_candidate.metadata.json",
+  "parent_prototype_bank": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/prototype_bank_v2_1_candidate.json",
+  "parent_runtime_config": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/rf_posture_v2_1_candidate.runtime_config.json",
+  "leanback_submodel": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/leanback_subclassifier_v2_2_candidate.joblib",
+  "leanback_prototype_bank": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/leanback_prototype_bank_v2_2_candidate.json",
+  "leanback_runtime_config": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/leanback_subclassifier_v2_2_candidate.runtime_config.json",
+  "lateral_submodel": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/lateral_merged_subclassifier_v2_4_1_candidate.joblib",
+  "lateral_metadata": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/lateral_merged_subclassifier_v2_4_1_candidate.metadata.json",
+  "lateral_prototype_bank": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/lateral_merged_prototype_bank_v2_4_1_candidate.json",
+  "lateral_runtime_config": "/Users/yongqizhang/Documents/posture-recognition-system/recognizer/models/lateral_merged_subclassifier_v2_4_1_candidate.runtime_config.json",
+  "default_model_pointer_changed": false
+}
