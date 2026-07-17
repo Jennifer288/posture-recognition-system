@@ -19,6 +19,10 @@ from .lateral_merged_subclassifier_v242 import (
     TwoStageLateralMergedRecognizerV242,
     load_lateral_merged_fine_model_v242,
 )
+from .lateral_merged_subclassifier_v243 import (
+    TwoStageLateralMergedRecognizerV243,
+    load_lateral_merged_fine_model_v243,
+)
 from .occupancy_detector import OccupancyDetector
 from .rf_recognizer import load_hybrid_recognizer
 from .seat_analyzer import SeatAnalyzer
@@ -123,6 +127,19 @@ MODEL_VERSION_ARTIFACTS = {
         "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_merged_prototype_bank_v2_4_2_candidate.json",
         "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_2_candidate.runtime_config.json",
         "bundle": PACKAGE_DIR / "models" / "v2_4_2_candidate.model_bundle.json",
+    },
+    "v2_4_3_candidate": {
+        "model": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.joblib",
+        "prototype_bank": PACKAGE_DIR / "models" / "prototype_bank_v2_1_candidate.json",
+        "metadata": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.metadata.json",
+        "runtime_config": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.runtime_config.json",
+        "submodel": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.joblib",
+        "subprototype_bank": PACKAGE_DIR / "models" / "leanback_prototype_bank_v2_2_candidate.json",
+        "subruntime_config": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.runtime_config.json",
+        "lateral_submodel": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_3_candidate.joblib",
+        "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_merged_prototype_bank_v2_4_3_candidate.json",
+        "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_merged_subclassifier_v2_4_3_candidate.runtime_config.json",
+        "bundle": PACKAGE_DIR / "models" / "v2_4_3_candidate.model_bundle.json",
     },
 }
 
@@ -269,7 +286,7 @@ class Recognizer:
             raise FileNotFoundError(f"RF V1 model not found: {self.model_path}")
         prototype_path = self.prototype_bank_path if self.prototype_bank_path.exists() else None
         parent = load_hybrid_recognizer(self.model_path, prototype_path)
-        if self.model_version not in {"v2_2_candidate", "v2_3_candidate", "v2_3_1_candidate", "v2_4_candidate", "v2_4_1_candidate", "v2_4_2_candidate"}:
+        if self.model_version not in {"v2_2_candidate", "v2_3_candidate", "v2_3_1_candidate", "v2_4_candidate", "v2_4_1_candidate", "v2_4_2_candidate", "v2_4_3_candidate"}:
             return parent
         if self.submodel_path is None or not Path(self.submodel_path).exists():
             raise FileNotFoundError(f"V2.2 leanback submodel not found: {self.submodel_path}")
@@ -303,6 +320,14 @@ class Recognizer:
         if self.model_version == "v2_4_2_candidate":
             lateral_model = load_lateral_merged_fine_model_v242(self.lateral_submodel_path)
             return TwoStageLateralMergedRecognizerV242(
+                v22,
+                lateral_model,
+                model_version=self.model_version,
+                parent_model_version="v2_2_candidate",
+            )
+        if self.model_version == "v2_4_3_candidate":
+            lateral_model = load_lateral_merged_fine_model_v243(self.lateral_submodel_path)
+            return TwoStageLateralMergedRecognizerV243(
                 v22,
                 lateral_model,
                 model_version=self.model_version,
@@ -452,6 +477,14 @@ class Recognizer:
             "lateral_physical_evidence_score",
             "lateral_gate_decision",
             "lateral_gate_decision_reason",
+            "cross_leg_lateral_competition_active",
+            "cross_leg_lateral_competition_reason",
+            "cross_leg_support_score",
+            "lateral_support_score",
+            "lateral_vs_cross_leg_margin",
+            "conditional_gate_override",
+            "conditional_gate_override_reason",
+            "final_selected_branch",
         ]:
             payload[key] = raw.get(key) if is_human else None
         return payload

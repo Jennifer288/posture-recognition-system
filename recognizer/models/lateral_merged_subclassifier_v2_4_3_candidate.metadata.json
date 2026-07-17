@@ -1,0 +1,285 @@
+{
+  "model_version": "v2_4_3_candidate",
+  "model_name": "lateral_merged_subclassifier_v2_4_3_candidate",
+  "production_status": "candidate_only",
+  "final_holdout_status": "not_started",
+  "parent_model_version": "v2_2_candidate",
+  "previous_candidates": [
+    "v2_3_candidate",
+    "v2_3_1_candidate",
+    "v2_4_candidate",
+    "v2_4_1_candidate",
+    "v2_4_2_candidate"
+  ],
+  "created_at": "2026-07-17T08:20:32.385471+00:00",
+  "label_taxonomy_version": "lateral_merge_v1",
+  "label_merge_strategy": "标准侧坐 + 侧身倚靠坐 -> 侧向坐姿; 斜跨坐 remains independent; 侧向姿势 is boundary fallback",
+  "original_to_merged_label_mapping": {
+    "标准侧坐": "侧向坐姿",
+    "侧身倚靠坐": "侧向坐姿",
+    "斜跨坐": "斜跨坐"
+  },
+  "source_subtypes": [
+    "侧身倚靠坐",
+    "斜跨坐",
+    "标准侧坐"
+  ],
+  "labels": [
+    "侧向坐姿",
+    "斜跨坐"
+  ],
+  "fallback_label": "侧向姿势",
+  "selected_method": "prototype",
+  "feature_names": [
+    "cop_x",
+    "cop_y",
+    "left_share",
+    "right_share",
+    "left_right_balance",
+    "left_right_abs_balance",
+    "front_share",
+    "back_share",
+    "front_back_balance",
+    "row_0_3_share",
+    "row_4_7_share",
+    "row_8_11_share",
+    "row_12_15_share",
+    "col_0_3_share",
+    "col_4_7_share",
+    "col_8_11_share",
+    "col_12_15_share",
+    "front_left_share",
+    "front_right_share",
+    "back_left_share",
+    "back_right_share",
+    "active_area_ratio",
+    "peak_share",
+    "hhi",
+    "bbox_row_min",
+    "bbox_col_min",
+    "bbox_row_max",
+    "bbox_col_max",
+    "bbox_height",
+    "bbox_width",
+    "bbox_center_x",
+    "bbox_center_y",
+    "largest_region_ratio",
+    "region_count_scaled",
+    "max_row",
+    "max_col",
+    "cop_x_std",
+    "cop_y_std",
+    "left_right_std",
+    "front_back_std",
+    "total_cv",
+    "log_total"
+  ],
+  "training_files": [
+    "CS1_biaozhuncezuo1.csv",
+    "CS1_biaozhuncezuo2.csv",
+    "SY1_ceshenyikaozuo1.csv",
+    "SY1_ceshenyikaozuo2.csv",
+    "SY2_ceshenyikaozuo1.csv",
+    "SY2_ceshenyikaozuo2.csv",
+    "XC1_xiekuazuo1.csv",
+    "XC1_xiekuazuo2.csv"
+  ],
+  "training_file_hashes": {
+    "CS1_biaozhuncezuo1.csv": "0143b29fc4f5b1504fe330f25cdc7f18bb1ff36c80522b3cb0c749b0c72ab3c5",
+    "CS1_biaozhuncezuo2.csv": "8ab73a9d0490c5908317ee73189bcf9e40c6d98ba6b7b84c3df9ea204af94aa7",
+    "SY1_ceshenyikaozuo1.csv": "01762e09957eb7b84dd843a249c40a4deff23293856ca64b67ad746fb3700aed",
+    "SY1_ceshenyikaozuo2.csv": "e78017967937e9761a531639631a1615440b5e969382b0fc58642a55e6e1eb44",
+    "SY2_ceshenyikaozuo1.csv": "812e1859d2d3deb0625a1112f47d6a42db7d30af136066557daa7f211ebced1a",
+    "SY2_ceshenyikaozuo2.csv": "71c2f8776c439464bec7bf9f85b5072009a6d0142ff678ed621b79ded23f69a8",
+    "XC1_xiekuazuo1.csv": "188b49f0ee7986160b12339c4d37e6e8bedfae2ba66f16a87407b7570bb9ef73",
+    "XC1_xiekuazuo2.csv": "088474386a8a673e47c08b4c71bdce7cdca0f1dd2453a6ccb4e088f22b7d6125"
+  },
+  "excluded_holdout_files": [
+    "V23H1_biaozhuncezuo1.csv",
+    "V23H1_biaozhuncezuo2.csv",
+    "V23H1_ceshenyikaozuo1.csv",
+    "V23H1_ceshenyikaozuo2.csv",
+    "V23H1_xiekuazuo1.csv",
+    "V23H1_xiekuazuo2.csv",
+    "V241H1_biaozhuncezuo1.csv",
+    "V241H1_biaozhuncezuo2.csv",
+    "V241H1_ceshenyikaozuo1.csv",
+    "V241H1_ceshenyikaozuo2.csv",
+    "V241H1_xiekuazuo1.csv",
+    "V241H1_xiekuazuo2.csv",
+    "V242H1_biaozhuncezuo1.csv",
+    "V242H1_biaozhuncezuo2.csv",
+    "V242H1_ceshenyikaozuo1.csv",
+    "V242H1_ceshenyikaozuo2.csv",
+    "V242H1_xiekuazuo1.csv",
+    "V242H1_xiekuazuo2.csv"
+  ],
+  "development_data_notice": "CS1/SY1/SY2/XC1 are development data and are not eligible for future final holdout.",
+  "classifier_type": "prototype",
+  "prototype_strategy": "per-file prototypes + subtype/batch centers + merged class centers; validation folds rebuild without held-out CSV",
+  "boundary_thresholds": {
+    "submodel_version": "lateral_merged_subclassifier_v2_4_3_candidate",
+    "labels": [
+      "侧向坐姿",
+      "斜跨坐"
+    ],
+    "fallback_label": "侧向姿势",
+    "label_taxonomy_version": "lateral_merge_v1",
+    "feature_names": [
+      "cop_x",
+      "cop_y",
+      "left_share",
+      "right_share",
+      "left_right_balance",
+      "left_right_abs_balance",
+      "front_share",
+      "back_share",
+      "front_back_balance",
+      "row_0_3_share",
+      "row_4_7_share",
+      "row_8_11_share",
+      "row_12_15_share",
+      "col_0_3_share",
+      "col_4_7_share",
+      "col_8_11_share",
+      "col_12_15_share",
+      "front_left_share",
+      "front_right_share",
+      "back_left_share",
+      "back_right_share",
+      "active_area_ratio",
+      "peak_share",
+      "hhi",
+      "bbox_row_min",
+      "bbox_col_min",
+      "bbox_row_max",
+      "bbox_col_max",
+      "bbox_height",
+      "bbox_width",
+      "bbox_center_x",
+      "bbox_center_y",
+      "largest_region_ratio",
+      "region_count_scaled",
+      "max_row",
+      "max_col",
+      "cop_x_std",
+      "cop_y_std",
+      "left_right_std",
+      "front_back_std",
+      "total_cv",
+      "log_total"
+    ],
+    "class_distance_centers": {
+      "侧向坐姿": 1.217573,
+      "斜跨坐": 2.556111
+    },
+    "class_distance_scales": {
+      "侧向坐姿": 2.329222,
+      "斜跨坐": 2.25
+    },
+    "margin_thresholds": {
+      "侧向坐姿": 0.18,
+      "斜跨坐": 0.08
+    },
+    "distance_z_thresholds": {
+      "侧向坐姿": 4.0,
+      "斜跨坐": 7.5
+    },
+    "prototype_sources": {
+      "侧向坐姿": [
+        "CS1_biaozhuncezuo1.csv",
+        "CS1_biaozhuncezuo2.csv",
+        "SY1_ceshenyikaozuo1.csv",
+        "SY1_ceshenyikaozuo2.csv",
+        "SY2_ceshenyikaozuo1.csv",
+        "SY2_ceshenyikaozuo2.csv",
+        "标准侧坐::CS1_center",
+        "侧身倚靠坐::SY1_center",
+        "侧身倚靠坐::SY2_center",
+        "侧向坐姿::class_center"
+      ],
+      "斜跨坐": [
+        "XC1_xiekuazuo1.csv",
+        "XC1_xiekuazuo2.csv",
+        "斜跨坐::XC1_center",
+        "斜跨坐::class_center"
+      ]
+    },
+    "prototype_subtypes": {
+      "侧向坐姿": [
+        "标准侧坐",
+        "标准侧坐",
+        "侧身倚靠坐",
+        "侧身倚靠坐",
+        "侧身倚靠坐",
+        "侧身倚靠坐",
+        "标准侧坐",
+        "侧身倚靠坐",
+        "侧身倚靠坐",
+        "侧向坐姿"
+      ],
+      "斜跨坐": [
+        "斜跨坐",
+        "斜跨坐",
+        "斜跨坐",
+        "斜跨坐"
+      ]
+    }
+  },
+  "validation_scheme": [
+    "LOFO",
+    "subtype generalization",
+    "diagonal per-file leave-out"
+  ],
+  "evaluation_metrics": {
+    "lofo": {
+      "method": "prototype",
+      "file_count": 8,
+      "correct_accept_count": 8,
+      "correct_fallback_count": 0,
+      "wrong_accept_count": 0,
+      "gate_miss_count": 0,
+      "fine_file_accuracy": 1.0,
+      "safe_resolution_rate": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.014714
+    },
+    "subtype_generalization": {
+      "method": "subtype_generalization",
+      "file_count": 6,
+      "correct_accept_count": 5,
+      "correct_fallback_count": 1,
+      "wrong_accept_count": 0,
+      "gate_miss_count": 0,
+      "fine_file_accuracy": 0.833333,
+      "safe_resolution_rate": 1.0,
+      "fallback_rate": 0.166667,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.104232
+    },
+    "diagonal_leave_one_file_out": {
+      "method": "diagonal_leave_one_file_out",
+      "file_count": 2,
+      "correct_accept_count": 2,
+      "correct_fallback_count": 0,
+      "wrong_accept_count": 0,
+      "gate_miss_count": 0,
+      "fine_file_accuracy": 1.0,
+      "safe_resolution_rate": 1.0,
+      "fallback_rate": 0.0,
+      "wrong_accept_rate": 0.0,
+      "mean_boundary_ratio": 0.038029
+    }
+  },
+  "python": {
+    "version": "3.12.13 (main, Mar  3 2026, 15:35:03) [Clang 21.1.4 ]",
+    "platform": "macOS-15.7.5-arm64-arm-64bit"
+  },
+  "dependencies": {
+    "numpy": "2.5.1",
+    "sklearn": "1.6.1",
+    "joblib": "1.5.3"
+  },
+  "git_commit": "34c72868cf2681cccc875b3b092dda358dbbfa7a"
+}
