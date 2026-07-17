@@ -511,6 +511,7 @@ def model_version_display_name(model_version: str) -> str:
         "v2_1_candidate": "V2.1（Phase 1闭卷通过）",
         "v2_2_candidate": "V2.2（H3闭卷通过）",
         "v2_3_candidate": "V2.3候选（侧向三类局部解析，未闭卷）",
+        "v2_3_1_candidate": "V2.3.1候选（侧向链路修复，未闭卷）",
     }
     return names.get(model_version, model_version)
 

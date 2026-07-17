@@ -63,6 +63,19 @@ MODEL_VERSION_ARTIFACTS = {
         "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_subclassifier_v2_3_candidate.runtime_config.json",
         "bundle": PACKAGE_DIR / "models" / "v2_3_candidate.model_bundle.json",
     },
+    "v2_3_1_candidate": {
+        "model": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.joblib",
+        "prototype_bank": PACKAGE_DIR / "models" / "prototype_bank_v2_1_candidate.json",
+        "metadata": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.metadata.json",
+        "runtime_config": PACKAGE_DIR / "models" / "rf_posture_v2_1_candidate.runtime_config.json",
+        "submodel": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.joblib",
+        "subprototype_bank": PACKAGE_DIR / "models" / "leanback_prototype_bank_v2_2_candidate.json",
+        "subruntime_config": PACKAGE_DIR / "models" / "leanback_subclassifier_v2_2_candidate.runtime_config.json",
+        "lateral_submodel": PACKAGE_DIR / "models" / "lateral_subclassifier_v2_3_1_candidate.joblib",
+        "lateral_prototype_bank": PACKAGE_DIR / "models" / "lateral_prototype_bank_v2_3_1_candidate.json",
+        "lateral_runtime_config": PACKAGE_DIR / "models" / "lateral_subclassifier_v2_3_1_candidate.runtime_config.json",
+        "bundle": PACKAGE_DIR / "models" / "v2_3_1_candidate.model_bundle.json",
+    },
 }
 
 
@@ -208,7 +221,7 @@ class Recognizer:
             raise FileNotFoundError(f"RF V1 model not found: {self.model_path}")
         prototype_path = self.prototype_bank_path if self.prototype_bank_path.exists() else None
         parent = load_hybrid_recognizer(self.model_path, prototype_path)
-        if self.model_version not in {"v2_2_candidate", "v2_3_candidate"}:
+        if self.model_version not in {"v2_2_candidate", "v2_3_candidate", "v2_3_1_candidate"}:
             return parent
         if self.submodel_path is None or not Path(self.submodel_path).exists():
             raise FileNotFoundError(f"V2.2 leanback submodel not found: {self.submodel_path}")
@@ -227,7 +240,7 @@ class Recognizer:
         return TwoStageLateralRecognizer(
             v22,
             lateral_model,
-            model_version="v2_3_candidate",
+            model_version=self.model_version,
             parent_model_version="v2_2_candidate",
         )
 
@@ -334,6 +347,13 @@ class Recognizer:
             "lateral_second_distance",
             "lateral_prototype_margin",
             "lateral_out_of_distribution",
+            "lateral_temporal_state",
+            "lateral_stable_label",
+            "lateral_fallback_requested",
+            "final_priority_branch",
+            "selected_branch",
+            "override_reason",
+            "fallback_reason",
         ]:
             payload[key] = raw.get(key) if is_human else None
         return payload

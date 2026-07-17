@@ -99,6 +99,13 @@ class FramePrediction:
     lateral_second_distance: float | None = None
     lateral_prototype_margin: float | None = None
     lateral_out_of_distribution: bool | None = None
+    lateral_temporal_state: str | None = None
+    lateral_stable_label: str | None = None
+    lateral_fallback_requested: bool | None = None
+    final_priority_branch: str | None = None
+    selected_branch: str | None = None
+    override_reason: str | None = None
+    fallback_reason: str | None = None
     total_pressure: float = 0.0
     active_points: int = 0
     max_pressure: float = 0.0
@@ -352,6 +359,13 @@ class CsvRecognitionSession:
             "lateral_second_distance",
             "lateral_prototype_margin",
             "lateral_out_of_distribution",
+            "lateral_temporal_state",
+            "lateral_stable_label",
+            "lateral_fallback_requested",
+            "final_priority_branch",
+            "selected_branch",
+            "override_reason",
+            "fallback_reason",
             "total_pressure",
             "active_points",
             "max_pressure",
@@ -518,6 +532,13 @@ def frame_record_from_result(
         lateral_out_of_distribution=bool(result.get("lateral_out_of_distribution"))
         if is_human and result.get("lateral_out_of_distribution") is not None
         else None,
+        lateral_temporal_state=str(result.get("lateral_temporal_state")) if is_human and result.get("lateral_temporal_state") else None,
+        lateral_stable_label=str(result.get("lateral_stable_label")) if is_human and result.get("lateral_stable_label") else None,
+        lateral_fallback_requested=bool(result.get("lateral_fallback_requested")) if is_human and result.get("lateral_fallback_requested") is not None else None,
+        final_priority_branch=str(result.get("final_priority_branch")) if is_human and result.get("final_priority_branch") else None,
+        selected_branch=str(result.get("selected_branch")) if is_human and result.get("selected_branch") else None,
+        override_reason=str(result.get("override_reason")) if is_human and result.get("override_reason") else None,
+        fallback_reason=str(result.get("fallback_reason")) if is_human and result.get("fallback_reason") else None,
         total_pressure=round(total, 4),
         active_points=active_points,
         max_pressure=round(float(np.asarray(frame).max()) if np.asarray(frame).size else 0.0, 4),

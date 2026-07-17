@@ -444,6 +444,7 @@ class RecognizerApiTest(unittest.TestCase):
         v21_candidate_api = Recognizer(model_version="v2_1_candidate", analyzer=FakeAnalyzer())
         v22_candidate_api = Recognizer(model_version="v2_2_candidate", analyzer=FakeAnalyzer())
         v23_candidate_api = Recognizer(model_version="v2_3_candidate", analyzer=FakeAnalyzer())
+        v231_candidate_api = Recognizer(model_version="v2_3_1_candidate", analyzer=FakeAnalyzer())
 
         self.assertEqual(v1_api.model_path.name, "rf_posture_v1.joblib")
         self.assertEqual(v1_api.prototype_bank_path.name, "prototype_bank_v1.json")
@@ -456,6 +457,9 @@ class RecognizerApiTest(unittest.TestCase):
         self.assertEqual(v23_candidate_api.model_path.name, "rf_posture_v2_1_candidate.joblib")
         self.assertEqual(v23_candidate_api.submodel_path.name, "leanback_subclassifier_v2_2_candidate.joblib")
         self.assertEqual(v23_candidate_api.lateral_submodel_path.name, "lateral_subclassifier_v2_3_candidate.joblib")
+        self.assertEqual(v231_candidate_api.model_path.name, "rf_posture_v2_1_candidate.joblib")
+        self.assertEqual(v231_candidate_api.submodel_path.name, "leanback_subclassifier_v2_2_candidate.joblib")
+        self.assertEqual(v231_candidate_api.lateral_submodel_path.name, "lateral_subclassifier_v2_3_1_candidate.joblib")
 
     def test_root_import_path_is_available_for_hardware_integration(self) -> None:
         from recognizer_api import Recognizer
@@ -665,6 +669,9 @@ class CsvGuiCoreTest(unittest.TestCase):
             self.assertIn("boundary_reason", header)
             self.assertIn("lateral_subclassifier_triggered", header)
             self.assertIn("lateral_posture_label", header)
+            self.assertIn("lateral_temporal_state", header)
+            self.assertIn("final_priority_branch", header)
+            self.assertIn("fallback_reason", header)
 
     def test_export_records_model_version_and_artifact_hashes(self) -> None:
         from recognizer.csv_gui_core import CsvRecognitionSession, CsvPlaybackData
@@ -1196,6 +1203,122 @@ class LateralSubclassifierTest(unittest.TestCase):
         self.assertFalse(payload["lateral_subclassifier_triggered"])
         self.assertEqual(payload["label"], "端正坐姿")
         self.assertEqual(payload["model_version"], "v2_3_candidate")
+
+    def test_lateral_gate_uses_second_candidate_with_physical_evidence(self) -> None:
+        parent = {
+            "label": "交叉腿靠背坐",
+            "raw_label": "交叉腿靠背坐",
+            "confidence": 0.93,
+            "second_label": STANDARD_SIDE_SITTING_LABEL,
+            "margin": 0.90,
+            "is_boundary": False,
+            "prototype_diagnosis": {"label": STANDARD_SIDE_SITTING_LABEL},
+            "subclassifier_triggered": False,
+        }
+        features = {
+            "left_share": 0.72,
+            "right_share": 0.28,
+            "active_area_ratio": 0.35,
+            "front_share": 0.50,
+            "back_share": 0.50,
+            "row_4_7_share": 0.30,
+            "row_8_11_share": 0.32,
+            "cop_y": 6.4,
+        }
+
+        should_run, reasons = should_run_lateral_subclassifier(parent, features)
+
+        self.assertTrue(should_run, reasons)
+        self.assertTrue(any("lateral_candidate" in reason or "lateral_prototype" in reason for reason in reasons))
+
+    def test_lateral_boundary_fallback_is_displayable_to_global_smoother(self) -> None:
+        class Parent:
+            def predict_posture(self, window: np.ndarray) -> dict[str, object]:
+                return {
+                    "label": SIDE_LEANING_LABEL,
+                    "raw_label": SIDE_LEANING_LABEL,
+                    "confidence": 0.31,
+                    "second_label": DIAGONAL_SITTING_LABEL,
+                    "margin": 0.04,
+                    "is_boundary": False,
+                    "prototype_diagnosis": {"label": SIDE_LEANING_LABEL},
+                }
+
+        model = LateralFineModel(
+            prototypes={
+                STANDARD_SIDE_SITTING_LABEL: [np.zeros(len(LATERAL_FEATURE_NAMES), dtype=float)],
+                DIAGONAL_SITTING_LABEL: [np.ones(len(LATERAL_FEATURE_NAMES), dtype=float) * 0.04],
+                SIDE_LEANING_LABEL: [np.ones(len(LATERAL_FEATURE_NAMES), dtype=float) * 2.0],
+            },
+            prototype_sources={STANDARD_SIDE_SITTING_LABEL: ["std"], DIAGONAL_SITTING_LABEL: ["diag"], SIDE_LEANING_LABEL: ["lean"]},
+            feature_mean=np.zeros(len(LATERAL_FEATURE_NAMES), dtype=float),
+            feature_scale=np.ones(len(LATERAL_FEATURE_NAMES), dtype=float),
+            margin_threshold=0.08,
+            distance_thresholds={STANDARD_SIDE_SITTING_LABEL: 10.0, DIAGONAL_SITTING_LABEL: 10.0, SIDE_LEANING_LABEL: 10.0},
+        )
+        recognizer = TwoStageLateralRecognizer(Parent(), model)
+        frame = np.zeros((16, 16), dtype=float)
+        frame[5:13, 2:12] = 100.0
+
+        payload = recognizer.predict_posture(np.stack([frame] * 8))
+        smoothed = PredictionSmoother().update(payload)
+
+        self.assertTrue(payload["lateral_subclassifier_triggered"])
+        self.assertEqual(payload["label"], LATERAL_BOUNDARY_LABEL)
+        self.assertFalse(smoothed["is_boundary"])
+        self.assertEqual(smoothed["label"], LATERAL_BOUNDARY_LABEL)
+
+    def test_lateral_temporal_hold_prevents_parent_override_after_activation(self) -> None:
+        class Parent:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def predict_posture(self, window: np.ndarray) -> dict[str, object]:
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "label": SIDE_LEANING_LABEL,
+                        "raw_label": SIDE_LEANING_LABEL,
+                        "confidence": 0.82,
+                        "second_label": DIAGONAL_SITTING_LABEL,
+                        "margin": 0.35,
+                        "is_boundary": False,
+                        "prototype_diagnosis": {"label": SIDE_LEANING_LABEL},
+                    }
+                return {
+                    "label": "前倾端坐",
+                    "raw_label": "前倾端坐",
+                    "confidence": 0.88,
+                    "second_label": "端正坐姿",
+                    "margin": 0.41,
+                    "is_boundary": False,
+                    "prototype_diagnosis": {"label": "前倾端坐"},
+                }
+
+        model = LateralFineModel(
+            prototypes={
+                STANDARD_SIDE_SITTING_LABEL: [np.zeros(len(LATERAL_FEATURE_NAMES), dtype=float)],
+                DIAGONAL_SITTING_LABEL: [np.ones(len(LATERAL_FEATURE_NAMES), dtype=float) * 2.0],
+                SIDE_LEANING_LABEL: [np.ones(len(LATERAL_FEATURE_NAMES), dtype=float) * 4.0],
+            },
+            prototype_sources={STANDARD_SIDE_SITTING_LABEL: ["std"], DIAGONAL_SITTING_LABEL: ["diag"], SIDE_LEANING_LABEL: ["lean"]},
+            feature_mean=np.zeros(len(LATERAL_FEATURE_NAMES), dtype=float),
+            feature_scale=np.ones(len(LATERAL_FEATURE_NAMES), dtype=float),
+            margin_threshold=0.01,
+            distance_thresholds={STANDARD_SIDE_SITTING_LABEL: 10.0, DIAGONAL_SITTING_LABEL: 10.0, SIDE_LEANING_LABEL: 10.0},
+        )
+        recognizer = TwoStageLateralRecognizer(Parent(), model, lateral_hold_frames=3)
+        lateral_frame = np.zeros((16, 16), dtype=float)
+        lateral_frame[5:13, 0:9] = 120.0
+        neutral_frame = np.zeros((16, 16), dtype=float)
+        neutral_frame[4:12, 4:12] = 100.0
+
+        first = recognizer.predict_posture(np.stack([lateral_frame] * 8))
+        second = recognizer.predict_posture(np.stack([neutral_frame] * 8))
+
+        self.assertTrue(first["lateral_subclassifier_triggered"])
+        self.assertEqual(second["label"], first["label"])
+        self.assertEqual(second["final_priority_branch"], "lateral_temporal_hold")
 
 class LeanbackSubclassifierTest(unittest.TestCase):
     def test_gate_only_runs_for_leanback_related_parent_results(self) -> None:

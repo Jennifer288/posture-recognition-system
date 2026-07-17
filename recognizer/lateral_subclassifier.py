@@ -64,63 +64,82 @@ LATERAL_FEATURE_NAMES = [
 
 
 def should_run_lateral_subclassifier(stage1_result: dict[str, Any], features: dict[str, Any] | None = None) -> tuple[bool, list[str]]:
-    """Return whether the V2.3 lateral local resolver should run.
+    """Return whether the lateral local resolver should run.
 
-    V2.2 leanback has priority. For non-leanback postures, the gate requires
-    either a lateral parent label, or a parent Boundary region with lateral RF,
-    Prototype, or physical evidence. This keeps ordinary upright/front/back
-    postures out of the local resolver even when a transient top-2 candidate is
-    lateral.
+    The gate is deliberately evidence-based instead of relying only on the
+    parent final label. V2.3 failed when a lateral file had a non-lateral top-1
+    parent label but lateral top-2/prototype and clear side-loading evidence.
+    Leanback remains higher priority, but otherwise secondary lateral evidence
+    plus seat-observable lateral structure is enough to enter the safe local
+    resolver. Ambiguous local results still fall back to ``侧向坐姿``.
     """
 
     if bool(stage1_result.get("subclassifier_triggered")):
         return False, ["gate_rejected_leanback_priority"]
 
     reasons: list[str] = []
+    lateral_labels = {STANDARD_SIDE_SITTING_LABEL, DIAGONAL_SITTING_LABEL, SIDE_LEANING_LABEL}
     primary_candidates = [stage1_result.get("label"), stage1_result.get("final_display_label"), stage1_result.get("parent_posture_label")]
-    primary_lateral = [item for item in primary_candidates if item in {STANDARD_SIDE_SITTING_LABEL, DIAGONAL_SITTING_LABEL, SIDE_LEANING_LABEL}]
+    primary_lateral = [item for item in primary_candidates if item in lateral_labels]
     parent_boundary = bool(stage1_result.get("is_boundary")) or stage1_result.get("label") in {None, "", "边界/不确定"}
     parent_label = stage1_result.get("label") or stage1_result.get("final_display_label") or stage1_result.get("parent_posture_label")
 
     if primary_lateral:
         reasons.extend(f"lateral_parent_match={item}" for item in primary_lateral)
-        if features is not None:
-            physical_ok, physical_reasons = lateral_physical_gate(features)
-            if physical_ok:
-                extra = ["lateral_boundary_region"] if parent_boundary else []
-                return True, reasons + physical_reasons + extra
-            return False, reasons + physical_reasons
-        if not parent_boundary:
-            return True, reasons
-        return True, reasons + ["lateral_boundary_region"]
-
-    if parent_label not in {None, "", "边界/不确定"} and not parent_boundary:
-        return False, [f"gate_rejected_parent_non_lateral={parent_label}"]
 
     secondary_candidates = [stage1_result.get("raw_label"), stage1_result.get("second_label")]
-    diagnosis = stage1_result.get("prototype_diagnosis")
-    if isinstance(diagnosis, dict):
-        secondary_candidates.append(diagnosis.get("label"))
+    proto_label = _prototype_label_from_diagnosis(stage1_result.get("prototype_diagnosis"))
+    if proto_label:
+        secondary_candidates.append(proto_label)
     for candidate in secondary_candidates:
-        if candidate in {STANDARD_SIDE_SITTING_LABEL, DIAGONAL_SITTING_LABEL, SIDE_LEANING_LABEL}:
-            reasons.append(f"lateral_candidate={candidate}")
-    if parent_boundary and reasons:
-        if features is not None:
-            physical_ok, physical_reasons = lateral_physical_gate(features)
-            if physical_ok:
-                return True, reasons + physical_reasons + ["lateral_boundary_region"]
-            return False, reasons + physical_reasons
-        reasons.append("lateral_boundary_region")
-        return True, reasons
+        if candidate in lateral_labels:
+            if candidate == proto_label:
+                reasons.append(f"lateral_prototype_match={candidate}")
+            else:
+                reasons.append(f"lateral_candidate={candidate}")
 
-    if features is not None and parent_boundary:
+    physical_ok = False
+    physical_reasons: list[str] = []
+    if features is not None:
         physical_ok, physical_reasons = lateral_physical_gate(features)
-        if physical_ok:
-            return True, physical_reasons + ["lateral_boundary_region"]
-        return False, physical_reasons
 
-    return False, reasons or ["gate_rejected_no_lateral_evidence"]
+    if primary_lateral:
+        if features is None or physical_ok:
+            extra = ["lateral_boundary_region"] if parent_boundary else []
+            return True, reasons + physical_reasons + extra
+        return False, reasons + physical_reasons
 
+    if reasons:
+        if features is None:
+            if parent_boundary:
+                return True, reasons + ["lateral_boundary_region"]
+        elif physical_ok:
+            extra = ["lateral_secondary_candidate_with_physical_gate"]
+            if parent_boundary:
+                extra.append("lateral_boundary_region")
+            return True, reasons + physical_reasons + extra
+
+    if features is not None and parent_boundary and physical_ok:
+        return True, physical_reasons + ["lateral_physical_boundary_region"]
+
+    if parent_label not in {None, "", "边界/不确定"} and not parent_boundary:
+        return False, [f"gate_rejected_parent_non_lateral={parent_label}"] + reasons + physical_reasons
+    return False, reasons + physical_reasons or ["gate_rejected_no_lateral_evidence"]
+
+
+def _prototype_label_from_diagnosis(diagnosis: Any) -> str | None:
+    if isinstance(diagnosis, dict):
+        label = diagnosis.get("label") or diagnosis.get("nearest_label")
+        return str(label) if label else None
+    if isinstance(diagnosis, str):
+        try:
+            payload = json.loads(diagnosis)
+            if isinstance(payload, dict):
+                label = payload.get("label") or payload.get("nearest_label")
+                return str(label) if label else None
+        except Exception:
+            return None
+    return None
 
 def lateral_physical_gate(features: dict[str, Any]) -> tuple[bool, list[str]]:
     """Conservative seat-only physical gate for lateral postures."""
@@ -390,6 +409,44 @@ class LateralFineModel:
         }
 
 
+LATERAL_DISPLAY_CONFIDENCE = 0.72
+LATERAL_DISPLAY_MARGIN = 0.20
+
+
+def resolve_final_posture_label(
+    parent_result: dict[str, Any],
+    lateral_result: dict[str, Any] | None = None,
+    temporal_state: str = "inactive",
+) -> dict[str, Any]:
+    """Resolve parent, leanback, and lateral branches into one display label."""
+
+    if lateral_result is None:
+        return {
+            "label": parent_result.get("label"),
+            "selected_branch": "parent",
+            "override_reason": "no_lateral_resolution",
+            "fallback_reason": "",
+            "lateral_fallback_requested": False,
+        }
+    lateral_label = lateral_result.get("final_display_label") or lateral_result.get("lateral_posture_label")
+    fallback_requested = bool(lateral_result.get("lateral_boundary")) or lateral_label == LATERAL_BOUNDARY_LABEL
+    if fallback_requested:
+        label = LATERAL_BOUNDARY_LABEL
+        selected = "lateral_temporal_hold" if temporal_state == "hold" else "lateral_fallback"
+        fallback_reason = "; ".join(str(item) for item in lateral_result.get("lateral_boundary_reasons") or []) or "lateral_uncertain"
+    else:
+        label = lateral_label
+        selected = "lateral_temporal_hold" if temporal_state == "hold" else "lateral_fine"
+        fallback_reason = ""
+    return {
+        "label": label,
+        "selected_branch": selected,
+        "override_reason": "lateral_result_has_priority_after_gate",
+        "fallback_reason": fallback_reason,
+        "lateral_fallback_requested": fallback_requested,
+    }
+
+
 class TwoStageLateralRecognizer:
     def __init__(
         self,
@@ -397,17 +454,59 @@ class TwoStageLateralRecognizer:
         lateral_model: LateralFineModel,
         model_version: str = "v2_3_candidate",
         parent_model_version: str = "v2_2_candidate",
+        lateral_hold_frames: int = 6,
     ) -> None:
         self.parent_recognizer = parent_recognizer
         self.lateral_model = lateral_model
         self.model_version = model_version
         self.parent_model_version = parent_model_version
         self.lateral_submodel_version = lateral_model.submodel_version
+        self.lateral_hold_frames = max(0, int(lateral_hold_frames))
+        self._last_lateral_result: dict[str, Any] | None = None
+        self._last_lateral_label: str | None = None
+        self._missed_lateral_frames = 0
+
+    def reset(self) -> None:
+        self._last_lateral_result = None
+        self._last_lateral_label = None
+        self._missed_lateral_frames = 0
+        reset = getattr(self.parent_recognizer, "reset", None)
+        if callable(reset):
+            reset()
 
     def predict_posture(self, window: np.ndarray) -> dict[str, Any]:
         parent = dict(self.parent_recognizer.predict_posture(window))
         feature_vector, feature_map = extract_lateral_features(window)
         should_run, gate_reasons = should_run_lateral_subclassifier(parent, feature_map)
+        payload = self._base_payload(parent, should_run, gate_reasons)
+        if should_run:
+            lateral = self.lateral_model.predict_from_features(feature_vector)
+            lateral["lateral_feature_summary"] = feature_map
+            self._last_lateral_result = dict(lateral)
+            self._last_lateral_label = str(lateral.get("final_display_label") or lateral.get("lateral_posture_label") or "")
+            self._missed_lateral_frames = 0
+            payload.update(lateral)
+            return self._apply_lateral_resolution(payload, parent, lateral, temporal_state="active")
+
+        if self._last_lateral_result is not None and not bool(parent.get("subclassifier_triggered")):
+            self._missed_lateral_frames += 1
+            if self._missed_lateral_frames <= self.lateral_hold_frames:
+                lateral = dict(self._last_lateral_result)
+                reasons = list(lateral.get("lateral_boundary_reasons") or [])
+                if lateral.get("lateral_boundary") and "temporal_lateral_hold" not in reasons:
+                    reasons.append("temporal_lateral_hold")
+                lateral["lateral_boundary_reasons"] = reasons
+                payload.update(lateral)
+                payload["lateral_subclassifier_triggered"] = True
+                payload["lateral_gate_reason"] = "lateral_temporal_hold"
+                return self._apply_lateral_resolution(payload, parent, lateral, temporal_state="hold")
+        if bool(parent.get("subclassifier_triggered")) or self._missed_lateral_frames > self.lateral_hold_frames:
+            self._last_lateral_result = None
+            self._last_lateral_label = None
+            self._missed_lateral_frames = 0
+        return payload
+
+    def _base_payload(self, parent: dict[str, Any], should_run: bool, gate_reasons: list[str]) -> dict[str, Any]:
         payload = dict(parent)
         payload.update(
             {
@@ -424,23 +523,42 @@ class TwoStageLateralRecognizer:
                 "lateral_prototype_label": None,
                 "lateral_prototype_distance": None,
                 "lateral_fallback_used": False,
+                "lateral_temporal_state": "active" if should_run else "inactive",
+                "lateral_stable_label": None,
+                "lateral_fallback_requested": False,
+                "final_priority_branch": "parent",
+                "selected_branch": "parent",
+                "override_reason": "gate_not_active",
+                "fallback_reason": "",
             }
         )
-        if not should_run:
-            return payload
-        lateral = self.lateral_model.predict_from_features(feature_vector)
-        lateral["lateral_feature_summary"] = feature_map
-        payload.update(lateral)
-        payload["label"] = lateral["final_display_label"]
-        # Keep the top-level stream displayable through the existing smoother.
-        # Detailed lateral confidence/margin remain in dedicated diagnostic fields.
-        payload["confidence"] = parent.get("confidence", lateral.get("lateral_confidence"))
-        payload["second_label"] = lateral.get("lateral_second_label") or parent.get("second_label")
-        payload["margin"] = parent.get("margin", lateral.get("lateral_margin"))
-        payload["is_boundary"] = False
-        payload["boundary_reasons"] = list(parent.get("boundary_reasons") or [])
         return payload
 
+    def _apply_lateral_resolution(
+        self,
+        payload: dict[str, Any],
+        parent: dict[str, Any],
+        lateral: dict[str, Any],
+        temporal_state: str,
+    ) -> dict[str, Any]:
+        resolution = resolve_final_posture_label(parent, lateral, temporal_state=temporal_state)
+        label = resolution["label"]
+        payload["label"] = label
+        payload["final_display_label"] = label
+        payload["confidence"] = max(float(parent.get("confidence") or 0.0), LATERAL_DISPLAY_CONFIDENCE)
+        payload["second_label"] = lateral.get("lateral_second_label") or parent.get("second_label")
+        payload["margin"] = max(float(parent.get("margin") or 0.0), LATERAL_DISPLAY_MARGIN)
+        payload["is_boundary"] = False
+        payload["boundary_reasons"] = []
+        payload["boundary_reason"] = None
+        payload["selected_branch"] = resolution["selected_branch"]
+        payload["final_priority_branch"] = resolution["selected_branch"]
+        payload["override_reason"] = resolution["override_reason"]
+        payload["fallback_reason"] = resolution["fallback_reason"]
+        payload["lateral_fallback_requested"] = resolution["lateral_fallback_requested"]
+        payload["lateral_temporal_state"] = temporal_state
+        payload["lateral_stable_label"] = label
+        return payload
 
 def save_lateral_fine_model(path: Path | str, model: LateralFineModel) -> None:
     import joblib

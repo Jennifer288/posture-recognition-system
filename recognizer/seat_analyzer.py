@@ -29,6 +29,9 @@ class SeatAnalyzer:
         self._recent_frames: deque[np.ndarray] = deque(maxlen=self.window_frames)
 
     def reset(self) -> None:
+        reset_recognizer = getattr(self.recognizer, "reset", None)
+        if callable(reset_recognizer):
+            reset_recognizer()
         self.seat_detector.reset()
         self.smoother.reset()
         self._recent_frames.clear()
@@ -103,6 +106,13 @@ class SeatAnalyzer:
             "lateral_second_distance": smoothed.get("lateral_second_distance"),
             "lateral_prototype_margin": smoothed.get("lateral_prototype_margin"),
             "lateral_out_of_distribution": smoothed.get("lateral_out_of_distribution"),
+            "lateral_temporal_state": smoothed.get("lateral_temporal_state"),
+            "lateral_stable_label": smoothed.get("lateral_stable_label"),
+            "lateral_fallback_requested": smoothed.get("lateral_fallback_requested"),
+            "final_priority_branch": smoothed.get("final_priority_branch"),
+            "selected_branch": smoothed.get("selected_branch"),
+            "override_reason": smoothed.get("override_reason"),
+            "fallback_reason": smoothed.get("fallback_reason"),
         }
 
     def _blocked_output(self, occupancy: OccupancyResult) -> dict[str, object]:
