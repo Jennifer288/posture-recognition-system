@@ -26,6 +26,7 @@ from recognizer.training import build_v1_prototype_bank, compare_v1_models
 from recognizer.pipeline import RealtimePosturePipeline
 from recognizer.predict import prediction_to_dict
 from recognizer.gui import pressure_to_color
+from recognizer.csv_gui import heatmap_grid_geometry, playback_completion_message
 from recognizer.leanback_subclassifier import (
     FINE_BOUNDARY_LABEL,
     FINE_LEANBACK_LABEL,
@@ -1960,6 +1961,45 @@ class GuiTest(unittest.TestCase):
     def test_pressure_to_color_returns_hex_rgb(self) -> None:
         self.assertRegex(pressure_to_color(0.0, 100.0), r"^#[0-9a-f]{6}$")
         self.assertRegex(pressure_to_color(100.0, 100.0), r"^#[0-9a-f]{6}$")
+
+    def test_csv_heatmap_grid_geometry_keeps_square_centered_16_by_16(self) -> None:
+        geometry = heatmap_grid_geometry(720, 520)
+
+        self.assertEqual(geometry.grid_size, 16)
+        self.assertEqual(geometry.square_size, 520)
+        self.assertEqual(geometry.cell_size, 32.5)
+        self.assertEqual(geometry.offset_x, 100)
+        self.assertEqual(geometry.offset_y, 0)
+        self.assertEqual(geometry.bounds_for(0, 0), (100.0, 0.0, 132.5, 32.5))
+        self.assertEqual(geometry.bounds_for(15, 15), (587.5, 487.5, 620.0, 520.0))
+
+        cells = [geometry.bounds_for(row, col) for row in range(16) for col in range(16)]
+        self.assertEqual(len(cells), 256)
+        self.assertTrue(all(round(x1 - x0, 6) == round(y1 - y0, 6) for x0, y0, x1, y1 in cells))
+        self.assertEqual(max(x1 for _, _, x1, _ in cells), geometry.offset_x + geometry.square_size)
+        self.assertEqual(max(y1 for _, _, _, y1 in cells), geometry.offset_y + geometry.square_size)
+
+    def test_csv_playback_completion_message_stays_short_and_hides_model_json(self) -> None:
+        summary = {
+            "file_name": "sample.csv",
+            "processed_frames": 462,
+            "frame_count": 462,
+            "main_posture": "侧向坐姿",
+            "average_confidence": 0.9123,
+            "boundary_ratio": 0.0345,
+            "model_path": "/very/long/path/to/model.joblib",
+            "model_artifact_sha256": "a" * 64,
+            "model_bundle_path": "/very/long/path/to/bundle.json",
+        }
+
+        message = playback_completion_message(summary)
+
+        self.assertIn("已完成 sample.csv，共462帧，最终结果：侧向坐姿", message)
+        self.assertIn("结果已可导出", message)
+        self.assertNotIn("model_path", message)
+        self.assertNotIn("sha256", message.lower())
+        self.assertNotIn("{", message)
+        self.assertLess(len(message), 140)
 
 
 if __name__ == "__main__":

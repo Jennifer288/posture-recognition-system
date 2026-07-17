@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import tkinter as tk
+from dataclasses import dataclass
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Sequence
 
 import numpy as np
@@ -17,6 +18,7 @@ from .csv_gui_core import (
     FramePrediction,
     load_csv_playback,
     load_runtime_recognizer,
+    model_export_info,
 )
 from .gui import pressure_to_color
 from .recognizer_api import default_model_version
@@ -31,6 +33,71 @@ STATE_LABELS = {
     "HUMAN_RECOGNIZING": "人体稳定识别中",
     "POSTURE": "姿势识别中",
 }
+
+
+@dataclass(frozen=True)
+class HeatmapGridGeometry:
+    canvas_width: float
+    canvas_height: float
+    grid_size: int
+    square_size: float
+    cell_size: float
+    offset_x: float
+    offset_y: float
+
+    def bounds_for(self, row: int, col: int) -> tuple[float, float, float, float]:
+        x0 = self.offset_x + col * self.cell_size
+        y0 = self.offset_y + row * self.cell_size
+        x1 = self.offset_x + (col + 1) * self.cell_size
+        y1 = self.offset_y + (row + 1) * self.cell_size
+        return (x0, y0, x1, y1)
+
+
+def heatmap_grid_geometry(canvas_width: float, canvas_height: float, grid_size: int = 16) -> HeatmapGridGeometry:
+    width = max(float(canvas_width), 1.0)
+    height = max(float(canvas_height), 1.0)
+    square_size = min(width, height)
+    cell_size = square_size / float(grid_size)
+    return HeatmapGridGeometry(
+        canvas_width=width,
+        canvas_height=height,
+        grid_size=grid_size,
+        square_size=square_size,
+        cell_size=cell_size,
+        offset_x=(width - square_size) / 2.0,
+        offset_y=(height - square_size) / 2.0,
+    )
+
+
+def playback_completion_message(summary: dict[str, object]) -> str:
+    filename = str(summary.get("file_name") or "当前CSV")
+    frame_count = int(summary.get("processed_frames") or summary.get("frame_count") or 0)
+    posture = str(summary.get("main_posture") or "—")
+    return f"已完成 {filename}，共{frame_count}帧，最终结果：{posture}。结果已可导出。"
+
+
+def playback_completion_summary(session: CsvRecognitionSession) -> dict[str, object]:
+    posture_durations: dict[str, float] = {}
+    for segment in session.segments:
+        if segment.posture:
+            posture_durations[segment.posture] = posture_durations.get(segment.posture, 0.0) + segment.duration
+    main_posture = max(posture_durations, key=posture_durations.get) if posture_durations else None
+    return {
+        "file_name": session.data.path.name,
+        "processed_frames": len(session.predictions),
+        "frame_count": session.data.frame_count,
+        "main_posture": main_posture,
+    }
+
+
+def model_runtime_versions(recognizer: object) -> dict[str, object]:
+    runtime = getattr(recognizer, "_posture_recognizer", recognizer)
+    nested_parent = getattr(runtime, "parent_recognizer", None)
+    return {
+        "parent_model_version": getattr(runtime, "parent_model_version", None),
+        "submodel_version": getattr(runtime, "submodel_version", None) or getattr(nested_parent, "submodel_version", None),
+        "lateral_submodel_version": getattr(runtime, "lateral_submodel_version", None),
+    }
 
 
 class PostureCsvApp:
@@ -48,6 +115,8 @@ class PostureCsvApp:
         self.after_id: str | None = None
         self.dragging = False
         self.cell_size = 28
+        self.completion_handled = False
+        self.model_details_window: tk.Toplevel | None = None
 
         self.model_var = tk.StringVar(value=f"当前模型：{model_version_display_name(self.model_version)}")
         self.file_var = tk.StringVar(value="未选择CSV")
@@ -81,7 +150,7 @@ class PostureCsvApp:
 
         toolbar = ttk.Frame(self.root, padding=8)
         toolbar.grid(row=0, column=0, columnspan=2, sticky="ew")
-        for index in range(12):
+        for index in range(15):
             toolbar.columnconfigure(index, weight=0)
 
         ttk.Button(toolbar, text="选择CSV", command=self.select_csv).grid(row=0, column=0, padx=3)
@@ -94,10 +163,11 @@ class PostureCsvApp:
         ttk.Button(toolbar, text="下一帧", command=self.next_frame).grid(row=0, column=7, padx=3)
         ttk.Button(toolbar, text="重新校准", command=self.calibrate).grid(row=0, column=8, padx=3)
         ttk.Button(toolbar, text="导出结果", command=self.export_results).grid(row=0, column=9, padx=3)
-        ttk.Label(toolbar, text="速度").grid(row=0, column=10, padx=(12, 3))
-        ttk.Combobox(toolbar, textvariable=self.speed_var, values=["0.5×", "1×", "2×", "5×", "最大速度"], width=8, state="readonly").grid(row=0, column=11)
-        ttk.Label(toolbar, text="采样率").grid(row=0, column=12, padx=(12, 3))
-        ttk.Combobox(toolbar, textvariable=self.fps_var, values=["5 FPS", "10 FPS", "20 FPS"], width=8, state="readonly").grid(row=0, column=13)
+        ttk.Button(toolbar, text="查看模型详情", command=self.show_model_details).grid(row=0, column=10, padx=3)
+        ttk.Label(toolbar, text="速度").grid(row=0, column=11, padx=(12, 3))
+        ttk.Combobox(toolbar, textvariable=self.speed_var, values=["0.5×", "1×", "2×", "5×", "最大速度"], width=8, state="readonly").grid(row=0, column=12)
+        ttk.Label(toolbar, text="采样率").grid(row=0, column=13, padx=(12, 3))
+        ttk.Combobox(toolbar, textvariable=self.fps_var, values=["5 FPS", "10 FPS", "20 FPS"], width=8, state="readonly").grid(row=0, column=14)
 
         left = ttk.Frame(self.root, padding=(12, 8))
         left.grid(row=1, column=0, sticky="nsew")
@@ -105,14 +175,16 @@ class PostureCsvApp:
         left.rowconfigure(1, weight=1)
         ttk.Label(left, text="前", anchor="center").grid(row=0, column=1, sticky="ew")
         ttk.Label(left, text="左", anchor="center").grid(row=1, column=0, sticky="ns")
+        canvas_bg = str(self.root.cget("bg"))
         self.canvas = tk.Canvas(
             left,
             width=16 * self.cell_size,
             height=16 * self.cell_size,
-            bg="#101828",
+            bg=canvas_bg,
             highlightthickness=0,
         )
         self.canvas.grid(row=1, column=1, sticky="nsew", padx=6, pady=6)
+        self.canvas.bind("<Configure>", lambda _event: self._draw_heatmap(self.current_frame))
         ttk.Label(left, text="右", anchor="center").grid(row=1, column=2, sticky="ns")
         ttk.Label(left, text="后", anchor="center").grid(row=2, column=1, sticky="ew")
 
@@ -206,6 +278,7 @@ class PostureCsvApp:
             self.session = None
             self.current_record = None
             self.current_frame = self.data.frames[0]
+            self.completion_handled = False
             self._reset_recognizer_state()
             self.file_var.set(self.data.path.name)
             self.frame_var.set(f"0 / {self.data.frame_count}")
@@ -302,6 +375,78 @@ class PostureCsvApp:
         paths = self.session.export_results()
         messagebox.showinfo("导出完成", f"结果已导出到：\n{paths['directory']}")
 
+    def show_model_details(self) -> None:
+        if self.model_details_window is not None and self.model_details_window.winfo_exists():
+            self.model_details_window.lift()
+            self.model_details_window.focus_force()
+            return
+
+        if self.recognizer is None:
+            try:
+                self.recognizer = load_runtime_recognizer(model_version=self.model_version)
+            except CsvGuiError as exc:
+                messagebox.showerror("模型加载失败", str(exc))
+                return
+
+        runtime_versions = model_runtime_versions(self.recognizer)
+        details = {
+            "display_name": model_version_display_name(self.model_version),
+            "loaded_model_version": self.model_version,
+            "default_model_version": default_gui_model_version(),
+            **runtime_versions,
+            **model_export_info(self.recognizer),
+        }
+        details_text = json.dumps(details, ensure_ascii=False, indent=2)
+
+        window = tk.Toplevel(self.root)
+        self.model_details_window = window
+        window.title("模型详情")
+        window.geometry("800x550")
+        window.minsize(640, 400)
+
+        def close_window(_event: tk.Event | None = None) -> None:
+            if self.model_details_window is window:
+                self.model_details_window = None
+            if window.winfo_exists():
+                window.destroy()
+
+        def copy_details() -> None:
+            window.clipboard_clear()
+            window.clipboard_append(details_text)
+
+        window.protocol("WM_DELETE_WINDOW", close_window)
+        window.bind("<Escape>", close_window)
+        window.bind("<Command-w>", close_window)
+
+        container = ttk.Frame(window, padding=12)
+        container.grid(row=0, column=0, sticky="nsew")
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(1, weight=1)
+
+        summary = (
+            f"{details['display_name']}\n"
+            f"当前加载版本：{details['loaded_model_version']}\n"
+            f"默认模型版本：{details['default_model_version']}\n"
+            f"父模型版本：{details.get('parent_model_version') or '—'}\n"
+            f"后靠子模型版本：{details.get('submodel_version') or '—'}\n"
+            f"侧向子模型版本：{details.get('lateral_submodel_version') or '—'}\n"
+            "完整路径、哈希和晋级信息如下，可滚动查看。"
+        )
+        ttk.Label(container, text=summary, justify="left").grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        text = scrolledtext.ScrolledText(container, wrap="word", width=96, height=24)
+        text.grid(row=1, column=0, sticky="nsew")
+        text.insert("1.0", details_text)
+        text.configure(state="disabled")
+
+        buttons = ttk.Frame(container)
+        buttons.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        buttons.columnconfigure(0, weight=1)
+        ttk.Button(buttons, text="复制信息", command=copy_details).grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(buttons, text="关闭", command=close_window).grid(row=0, column=2)
+
     def _ensure_session(self, reset: bool) -> None:
         if self.data is None:
             raise CsvGuiError("未选择CSV")
@@ -311,6 +456,8 @@ class PostureCsvApp:
             self.session = CsvRecognitionSession(self.data, self.recognizer)
         elif reset:
             self.session.reset()
+        if reset:
+            self.completion_handled = False
         self._refresh_history()
 
     def _schedule_next(self, immediate: bool = False) -> None:
@@ -409,36 +556,39 @@ class PostureCsvApp:
         if self.after_id:
             self.root.after_cancel(self.after_id)
             self.after_id = None
+        if self.completion_handled:
+            return
         if not self.session:
             return
-        summary = self.session.summary()
-        self.summary_var.set(
-            "回放结束："
-            f"主要姿势={summary.get('main_posture') or '—'}，"
-            f"平均confidence={summary.get('average_confidence') or '—'}，"
-            f"Boundary比例={summary.get('boundary_ratio')}"
-        )
-        messagebox.showinfo("识别总结", json.dumps(summary, ensure_ascii=False, indent=2))
+        self.completion_handled = True
+        self.session.pause()
+        summary = playback_completion_summary(self.session)
+        self.summary_var.set(playback_completion_message(summary))
 
     def _draw_heatmap(self, frame: np.ndarray) -> None:
         self.canvas.delete("all")
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        if canvas_width <= 1:
+            canvas_width = int(float(self.canvas.cget("width")))
+        if canvas_height <= 1:
+            canvas_height = int(float(self.canvas.cget("height")))
+        geometry = heatmap_grid_geometry(canvas_width, canvas_height)
         max_value = float(np.max(frame)) if frame.size else 0.0
         for row in range(16):
             for col in range(16):
-                x0 = col * self.cell_size
-                y0 = row * self.cell_size
-                x1 = x0 + self.cell_size
-                y1 = y0 + self.cell_size
+                x0, y0, x1, y1 = geometry.bounds_for(row, col)
                 value = float(frame[row, col])
                 color = pressure_to_color(value, max_value)
                 self.canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="#172033")
-                if value > 0:
+                if value > 0 and geometry.cell_size >= 14:
+                    font_size = max(5, min(9, int(geometry.cell_size * 0.28)))
                     self.canvas.create_text(
                         (x0 + x1) / 2,
                         (y0 + y1) / 2,
                         text=str(int(round(value))),
                         fill="#f8fafc" if value > max(max_value * 0.45, 1.0) else "#0f172a",
-                        font=("Helvetica", 7),
+                        font=("Helvetica", font_size),
                     )
 
     def _clear_result_display(self) -> None:
