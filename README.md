@@ -113,6 +113,26 @@ python3 posture_csv_app.py --model-version v2_4_3_candidate
 
 除默认版本外，其他版本主要用于实验、诊断和回归测试。
 
+## Windows免Python版本
+
+项目提供GitHub Actions自动构建的Windows文件夹版桌面程序。Windows电脑无需安装Python、pip或任何Python依赖。
+
+使用步骤：
+
+1. 打开GitHub仓库 `Jennifer288/posture-recognition-system`。
+2. 进入Actions页面，运行 `Build Windows App`。
+3. 构建完成后下载Artifact：`PostureRecognition-Windows-V243`。
+4. 解压下载的ZIP文件。
+5. 双击 `PostureRecognition-V243.exe` 启动。
+
+该Windows程序会显式加载：
+
+```text
+v2_4_3_candidate
+```
+
+请保留解压后的整个 `PostureRecognition-V243/` 文件夹，不要只单独复制EXE。
+
 ## 统一识别API
 
 硬件端只需持续提供一个16×16压力帧：

@@ -1,0 +1,146 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "*.py"
+      - "**/*.py"
+      - "recognizer/models/**"
+      - "posture_csv_app_windows.py"
+      - "requirements-windows.txt"
+      - ".github/workflows/build-windows-app.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows folder app
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.13.5 x64
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13.5"
+          architecture: "x64"
+          cache: pip
+          cache-dependency-path: requirements-windows.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-windows.txt
+
+      - name: Compile check
+        shell: pwsh
+        run: |
+          python -m py_compile posture_csv_app_windows.py
+          python -m py_compile recognizer/csv_gui.py
+          python -m py_compile recognizer/recognizer_api.py
+
+      - name: Run tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_recognizer_core
+
+      - name: Build Windows app
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --onedir `
+            --name PostureRecognition-V243 `
+            --add-data "recognizer/models:recognizer/models" `
+            --collect-all sklearn `
+            posture_csv_app_windows.py
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $appDir = "dist/PostureRecognition-V243"
+          $exePath = Join-Path $appDir "PostureRecognition-V243.exe"
+          if (!(Test-Path $exePath)) {
+            throw "Missing expected executable: $exePath"
+          }
+
+          $modelCandidates = @(
+            (Join-Path $appDir "_internal/recognizer/models"),
+            (Join-Path $appDir "recognizer/models")
+          )
+          $modelsDir = $modelCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $modelsDir) {
+            throw "recognizer/models was not found in the packaged app."
+          }
+
+          $requiredChecks = @(
+            @{ Name = "joblib model"; Pattern = "*.joblib" },
+            @{ Name = "prototype bank JSON"; Pattern = "*prototype_bank*.json" },
+            @{ Name = "runtime config JSON"; Pattern = "*.runtime_config.json" },
+            @{ Name = "model bundle JSON"; Pattern = "*.model_bundle.json" },
+            @{ Name = "default_model.json"; Pattern = "default_model.json" }
+          )
+          foreach ($check in $requiredChecks) {
+            $matches = Get-ChildItem -Path $modelsDir -Recurse -File -Filter $check.Pattern
+            if (-not $matches) {
+              throw "Missing $($check.Name) under packaged models directory: $modelsDir"
+            }
+          }
+
+      - name: Create Windows README
+        shell: pwsh
+        run: |
+          $readmePath = "dist/PostureRecognition-V243/README-WINDOWS.txt"
+          @"
+          PostureRecognition-V243 Windows folder app
+
+          启动方式：
+          1. 解压 PostureRecognition-Windows-V243.zip。
+          2. 双击 PostureRecognition-V243.exe 启动。
+
+          当前打包版本：
+          - V2.4.3 candidate
+          - 程序启动时会显式加载 v2_4_3_candidate。
+
+          基本使用：
+          1. 点击“选择CSV”。
+          2. 选择压力坐垫CSV文件。
+          3. 点击“开始”播放和识别。
+          4. CSV播放完成后，可以点击“导出结果”保存结果。
+
+          注意事项：
+          - Windows电脑不需要安装Python、pip、NumPy、scikit-learn、joblib或PyInstaller。
+          - 请保留整个 PostureRecognition-V243 文件夹，不要只单独复制EXE。
+          - 不要随意删除文件夹内部的 _internal 或 recognizer/models 等文件。
+          - Windows第一次运行时可能显示SmartScreen提示。
+          - 仅运行自己从本仓库GitHub Actions下载的构建包。
+          "@ | Set-Content -Path $readmePath -Encoding UTF8
+          if (!(Test-Path $readmePath)) {
+            throw "Missing Windows README: $readmePath"
+          }
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Push-Location dist
+          Compress-Archive -Path "PostureRecognition-V243" -DestinationPath "PostureRecognition-Windows-V243.zip" -Force
+          if (!(Test-Path "PostureRecognition-Windows-V243.zip")) {
+            throw "Missing ZIP: dist/PostureRecognition-Windows-V243.zip"
+          }
+          Pop-Location
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: PostureRecognition-Windows-V243
+          path: dist/PostureRecognition-Windows-V243.zip
+          retention-days: 30
