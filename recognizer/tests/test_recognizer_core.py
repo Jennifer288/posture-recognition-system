@@ -4,6 +4,8 @@ import unittest
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from collections import deque
+from types import SimpleNamespace
+from unittest.mock import patch
 import csv
 import hashlib
 import json
@@ -2000,6 +2002,61 @@ class GuiTest(unittest.TestCase):
         self.assertNotIn("sha256", message.lower())
         self.assertNotIn("{", message)
         self.assertLess(len(message), 140)
+
+    def test_csv_history_treeview_scrollbar_layout_and_mousewheel_bindings(self) -> None:
+        import tkinter as tk
+
+        from recognizer.csv_gui import PostureCsvApp
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk unavailable: {exc}")
+        try:
+            root.withdraw()
+            app = PostureCsvApp(root)
+            root.update_idletasks()
+
+            self.assertTrue(str(app.history.cget("yscrollcommand")))
+            self.assertTrue(str(app.history_scrollbar.cget("command")))
+            self.assertEqual(app.history_box.grid_rowconfigure(0)["weight"], 1)
+            self.assertEqual(app.history_box.grid_columnconfigure(0)["weight"], 1)
+            self.assertGreaterEqual(app.history_box.grid_rowconfigure(0)["minsize"], 120)
+            self.assertTrue(app.history.bind("<MouseWheel>"))
+            self.assertTrue(app.history.bind("<Button-4>"))
+            self.assertTrue(app.history.bind("<Button-5>"))
+            self.assertGreaterEqual(int(app.history.cget("height")), 5)
+        finally:
+            root.destroy()
+
+    def test_csv_history_autoscrolls_only_when_segment_count_increases(self) -> None:
+        import tkinter as tk
+
+        from recognizer.csv_gui import PostureCsvApp
+        from recognizer.csv_gui_core import PostureSegment
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk unavailable: {exc}")
+        try:
+            root.withdraw()
+            app = PostureCsvApp(root)
+            segments = [
+                PostureSegment(float(index), float(index + 1), 1.0, "HUMAN", f"姿势{index}", 0.8, 0.7, 0.0, None)
+                for index in range(12)
+            ]
+            app.session = SimpleNamespace(segments=segments)
+
+            with patch.object(app.history, "see", wraps=app.history.see) as see:
+                app._refresh_history()
+                self.assertEqual(see.call_count, 1)
+                app._refresh_history()
+                self.assertEqual(see.call_count, 1)
+
+            self.assertEqual(len(app.history.get_children()), 12)
+        finally:
+            root.destroy()
 
 
 if __name__ == "__main__":

@@ -117,6 +117,7 @@ class PostureCsvApp:
         self.cell_size = 28
         self.completion_handled = False
         self.model_details_window: tk.Toplevel | None = None
+        self.history_item_count = 0
 
         self.model_var = tk.StringVar(value=f"当前模型：{model_version_display_name(self.model_version)}")
         self.file_var = tk.StringVar(value="未选择CSV")
@@ -144,6 +145,7 @@ class PostureCsvApp:
         self._draw_heatmap(self.current_frame)
 
     def _build_ui(self) -> None:
+        self.root.minsize(960, 620)
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=0)
         self.root.rowconfigure(1, weight=1)
@@ -199,6 +201,7 @@ class PostureCsvApp:
 
         right = ttk.Frame(self.root, padding=(8, 8, 12, 8))
         right.grid(row=1, column=1, sticky="nsew")
+        right.columnconfigure(0, weight=1)
         self._build_status_panel(right)
 
         bottom = ttk.Frame(self.root, padding=(12, 0, 12, 10))
@@ -235,11 +238,13 @@ class PostureCsvApp:
         self._field(result_box, "原因", self.boundary_reason_var, 6)
         self._field(result_box, "Prototype", self.prototype_var, 7)
 
-        history_box = ttk.LabelFrame(parent, text="识别历史", padding=8)
-        history_box.grid(row=3, column=0, sticky="nsew")
-        parent.rowconfigure(3, weight=1)
+        self.history_box = ttk.LabelFrame(parent, text="识别历史", padding=8)
+        self.history_box.grid(row=3, column=0, sticky="nsew")
+        parent.rowconfigure(3, weight=1, minsize=160)
+        self.history_box.rowconfigure(0, weight=1, minsize=140)
+        self.history_box.columnconfigure(0, weight=1)
         columns = ("start", "end", "duration", "state", "posture", "mean_conf", "boundary")
-        self.history = ttk.Treeview(history_box, columns=columns, show="headings", height=10)
+        self.history = ttk.Treeview(self.history_box, columns=columns, show="headings", height=8)
         labels = {
             "start": "开始",
             "end": "结束",
@@ -254,13 +259,35 @@ class PostureCsvApp:
             self.history.heading(col, text=labels[col])
             self.history.column(col, width=widths[col], anchor="center")
         self.history.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(history_box, orient="vertical", command=self.history.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        self.history.configure(yscrollcommand=scrollbar.set)
+        self.history_scrollbar = ttk.Scrollbar(self.history_box, orient="vertical", command=self.history.yview)
+        self.history_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.history.configure(yscrollcommand=self.history_scrollbar.set)
+        self._bind_history_scroll_events()
 
     def _field(self, parent: ttk.Frame, label: str, variable: tk.StringVar, row: int) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2)
         ttk.Label(parent, textvariable=variable, width=28).grid(row=row, column=1, sticky="w", padx=(8, 0), pady=2)
+
+    def _bind_history_scroll_events(self) -> None:
+        for widget in (self.history, self.history_box):
+            widget.bind("<MouseWheel>", self._on_history_mousewheel)
+            widget.bind("<Button-4>", self._on_history_button_scroll)
+            widget.bind("<Button-5>", self._on_history_button_scroll)
+
+    def _on_history_mousewheel(self, event: tk.Event) -> str:
+        delta = int(getattr(event, "delta", 0) or 0)
+        if delta == 0:
+            return "break"
+        self.history.yview_scroll(-1 if delta > 0 else 1, "units")
+        return "break"
+
+    def _on_history_button_scroll(self, event: tk.Event) -> str:
+        button = int(getattr(event, "num", 0) or 0)
+        if button == 4:
+            self.history.yview_scroll(-1, "units")
+        elif button == 5:
+            self.history.yview_scroll(1, "units")
+        return "break"
 
     def select_csv(self) -> None:
         if self.after_id:
@@ -533,12 +560,15 @@ class PostureCsvApp:
         return f"{self.session.segments[-1].duration:.2f}s"
 
     def _refresh_history(self) -> None:
+        previous_count = self.history_item_count
         for item in self.history.get_children():
             self.history.delete(item)
         if not self.session:
+            self.history_item_count = 0
             return
+        latest_item = ""
         for segment in self.session.segments[-50:]:
-            self.history.insert(
+            latest_item = self.history.insert(
                 "",
                 "end",
                 values=(
@@ -551,6 +581,9 @@ class PostureCsvApp:
                     f"{segment.boundary_ratio:.2f}",
                 ),
             )
+        self.history_item_count = len(self.history.get_children())
+        if latest_item and self.history_item_count > previous_count:
+            self.history.see(latest_item)
 
     def _finish_playback(self) -> None:
         if self.after_id:
@@ -609,6 +642,7 @@ class PostureCsvApp:
         self.active_var.set("0")
         for item in self.history.get_children():
             self.history.delete(item)
+        self.history_item_count = 0
 
     def _begin_drag(self) -> None:
         self.dragging = True
