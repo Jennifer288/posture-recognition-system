@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import time
+import unittest
+from collections import deque
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import numpy as np
+
+from recognizer.frame_reader import SerialFrameReader, list_serial_ports
+from recognizer.tests.test_serial_protocol import build_packet
+
+
+class FakeSerial:
+    def __init__(self, chunks: list[bytes] | None = None, *, error: Exception | None = None) -> None:
+        self.chunks = deque(chunks or [])
+        self.error = error
+        self.kwargs: dict[str, object] = {}
+        self.closed = False
+        self.read_calls = 0
+
+    def read(self, size: int) -> bytes:
+        self.read_calls += 1
+        if self.error is not None:
+            raise self.error
+        if self.chunks:
+            return self.chunks.popleft()
+        time.sleep(0.005)
+        return b""
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def wait_until(predicate, *, timeout: float = 1.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition was not reached before timeout")
+
+
+class SerialFrameReaderTest(unittest.TestCase):
+    def make_reader(self, fake: FakeSerial, **kwargs) -> SerialFrameReader:
+        def factory(**serial_kwargs):
+            fake.kwargs = serial_kwargs
+            return fake
+
+        return SerialFrameReader(port="/dev/cu.TEST", timeout=0.2, serial_factory=factory, **kwargs)
+
+    def test_reads_complete_packet_without_real_serial_hardware(self) -> None:
+        fake = FakeSerial([build_packet()])
+        reader = self.make_reader(fake)
+
+        try:
+            frame = reader.read_frame()
+        finally:
+            reader.stop()
+
+        self.assertEqual(frame.shape, (16, 16))
+        self.assertEqual(frame.dtype, np.float32)
+        self.assertEqual(float(frame[1, 0]), 1.0)
+        self.assertEqual(fake.kwargs["baudrate"], 460800)
+        self.assertEqual(fake.kwargs["bytesize"], 8)
+        self.assertEqual(fake.kwargs["parity"], "N")
+        self.assertEqual(fake.kwargs["stopbits"], 1)
+        self.assertFalse(fake.kwargs["xonxoff"])
+        self.assertFalse(fake.kwargs["rtscts"])
+        self.assertFalse(fake.kwargs["dsrdtr"])
+
+    def test_reads_packet_split_across_serial_reads(self) -> None:
+        packet = build_packet(bytes([9]) * 256)
+        fake = FakeSerial([packet[:12], packet[12:141], packet[141:]])
+        reader = self.make_reader(fake)
+
+        try:
+            frame = reader.read_frame()
+        finally:
+            reader.stop()
+
+        self.assertEqual(float(frame[0, 0]), 9.0)
+        self.assertEqual(reader.valid_frames, 1)
+
+    def test_queue_drops_oldest_frame_when_full(self) -> None:
+        packets = [
+            build_packet(bytes([1]) * 256),
+            build_packet(bytes([2]) * 256),
+            build_packet(bytes([3]) * 256),
+        ]
+        fake = FakeSerial(packets)
+        reader = self.make_reader(fake, queue_size=1)
+
+        try:
+            reader.start()
+            wait_until(lambda: reader.valid_frames >= 3)
+            frame = reader.read_frame()
+        finally:
+            reader.stop()
+
+        self.assertEqual(float(frame[0, 0]), 3.0)
+        self.assertEqual(reader.dropped_queue_frames, 2)
+
+    def test_stop_is_safe_before_start_and_idempotent(self) -> None:
+        fake = FakeSerial([])
+        reader = self.make_reader(fake)
+
+        reader.stop()
+        reader.start()
+        reader.stop()
+        reader.stop()
+
+        self.assertFalse(reader.is_running)
+        self.assertTrue(fake.closed)
+
+    def test_read_exception_is_saved_as_last_error(self) -> None:
+        fake = FakeSerial(error=RuntimeError("device disconnected"))
+        reader = self.make_reader(fake)
+
+        try:
+            reader.start()
+            wait_until(lambda: reader.last_error is not None)
+        finally:
+            reader.stop()
+
+        self.assertIn("device disconnected", str(reader.last_error))
+
+    def test_statistics_track_received_bytes_and_parser_counts(self) -> None:
+        packet = build_packet()
+        fake = FakeSerial([packet])
+        reader = self.make_reader(fake)
+
+        try:
+            reader.read_frame()
+            stats = reader.stats()
+        finally:
+            reader.stop()
+
+        self.assertGreaterEqual(stats["received_bytes"], len(packet))
+        self.assertEqual(stats["valid_frames"], 1)
+        self.assertEqual(stats["invalid_frames"], 0)
+        self.assertEqual(stats["discarded_bytes"], 0)
+        self.assertIn("current_fps", stats)
+
+    def test_serial_reader_does_not_import_or_call_recognizer(self) -> None:
+        import recognizer.frame_reader as frame_reader
+
+        self.assertFalse(hasattr(frame_reader, "Recognizer"))
+
+    def test_list_serial_ports_returns_all_reported_ports(self) -> None:
+        ports = [
+            SimpleNamespace(device="/dev/cu.usbserial-130", description="USB Serial"),
+            SimpleNamespace(device="/dev/cu.Bluetooth-Incoming-Port", description="Bluetooth"),
+            SimpleNamespace(device="debug-console", description="Debug Console"),
+        ]
+
+        with patch("recognizer.frame_reader._load_serial_comports", return_value=lambda: ports):
+            self.assertEqual(list_serial_ports(), ports)
+
+
+if __name__ == "__main__":
+    unittest.main()

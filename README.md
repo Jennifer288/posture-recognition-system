@@ -64,6 +64,12 @@ python3 -m pip install numpy pandas scikit-learn joblib
 
 macOS自带的Python环境通常包含Tkinter；如果GUI无法启动，请检查当前Python是否支持Tk。
 
+macOS实时串口读取依赖可以使用项目提供的运行依赖文件安装：
+
+```bash
+python3 -m pip install -r requirements-macos.txt
+```
+
 ## 启动桌面软件
 
 进入项目目录：

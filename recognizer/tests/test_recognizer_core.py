@@ -1024,11 +1024,15 @@ class FrameReaderTest(unittest.TestCase):
 
         self.assertEqual(frame.shape, (16, 16))
 
-    def test_serial_reader_is_a_configurable_skeleton(self) -> None:
+    def test_serial_reader_keeps_configuration_without_opening_port(self) -> None:
         reader = SerialFrameReader(port="/dev/tty.TEST", baudrate=115200, delimiter=",", timestamp_enabled=False)
 
-        with self.assertRaises(NotImplementedError):
-            reader.read_frame()
+        self.assertEqual(reader.port, "/dev/tty.TEST")
+        self.assertEqual(reader.baudrate, 115200)
+        self.assertEqual(reader.delimiter, ",")
+        self.assertFalse(reader.timestamp_enabled)
+        self.assertFalse(reader.is_running)
+        self.assertIsNone(reader.last_error)
 
 
 class OccupancyCsvReplayTest(unittest.TestCase):
