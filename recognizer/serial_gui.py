@@ -509,6 +509,9 @@ class PostureSerialApp:
 
 
 def _recommended_port(devices: list[str]) -> str | None:
+    for device in devices:
+        if _is_windows_com_port(device):
+            return device
     preferred = ("usbserial", "wchusbserial", "SLAB_USBtoUART", "usbmodem")
     rejected = ("Bluetooth-Incoming-Port", "debug-console")
     for needle in preferred:
@@ -519,6 +522,11 @@ def _recommended_port(devices: list[str]) -> str | None:
         if not any(item in device for item in rejected):
             return device
     return devices[0] if devices else None
+
+
+def _is_windows_com_port(device: str) -> bool:
+    candidate = str(device).upper()
+    return candidate.startswith("COM") and candidate[3:].isdigit()
 
 
 class _ThreadSafeValue:

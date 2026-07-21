@@ -1,0 +1,169 @@
+name: Build Windows Live Serial App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "posture_serial_app_windows.py"
+      - "recognizer/**/*.py"
+      - "recognizer/models/**"
+      - "requirements-windows.txt"
+      - ".github/workflows/build-windows-live-app.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-live:
+    name: Build Windows live serial folder app
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.13.5 x64
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13.5"
+          architecture: "x64"
+          cache: pip
+          cache-dependency-path: requirements-windows.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-windows.txt
+
+      - name: Compile check
+        shell: pwsh
+        run: |
+          python -m py_compile posture_serial_app_windows.py
+          python -m py_compile recognizer/serial_gui.py
+          python -m py_compile recognizer/serial_gui_core.py
+          python -m py_compile recognizer/frame_reader.py
+          python -m py_compile recognizer/serial_protocol.py
+          python -m py_compile recognizer/recognizer_api.py
+
+      - name: Run serial protocol tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_serial_protocol
+
+      - name: Run frame reader tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_frame_reader
+
+      - name: Run serial GUI core tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_serial_gui_core
+
+      - name: Run Windows serial compatibility tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_serial_windows_compat
+
+      - name: Run recognizer core tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_recognizer_core
+
+      - name: Build Windows live serial app
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --onedir `
+            --name PostureRecognition-Live-V243 `
+            --add-data "recognizer/models:recognizer/models" `
+            --collect-all sklearn `
+            --collect-all serial `
+            --hidden-import serial.tools.list_ports_windows `
+            posture_serial_app_windows.py
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $appDir = "dist/PostureRecognition-Live-V243"
+          $exePath = Join-Path $appDir "PostureRecognition-Live-V243.exe"
+          if (!(Test-Path $exePath)) {
+            throw "Missing expected executable: $exePath"
+          }
+
+          $modelCandidates = @(
+            (Join-Path $appDir "_internal/recognizer/models"),
+            (Join-Path $appDir "recognizer/models")
+          )
+          $modelsDir = $modelCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $modelsDir) {
+            throw "recognizer/models was not found in the packaged live app."
+          }
+
+          $requiredChecks = @(
+            @{ Name = "joblib model"; Pattern = "*.joblib" },
+            @{ Name = "prototype bank JSON"; Pattern = "*prototype_bank*.json" },
+            @{ Name = "runtime config JSON"; Pattern = "*.runtime_config.json" },
+            @{ Name = "model bundle JSON"; Pattern = "*.model_bundle.json" },
+            @{ Name = "default_model.json"; Pattern = "default_model.json" }
+          )
+          foreach ($check in $requiredChecks) {
+            $matches = Get-ChildItem -Path $modelsDir -Recurse -File -Filter $check.Pattern
+            if (-not $matches) {
+              throw "Missing $($check.Name) under packaged models directory: $modelsDir"
+            }
+          }
+
+      - name: Create Windows live README
+        shell: pwsh
+        run: |
+          $readmePath = "dist/PostureRecognition-Live-V243/README-WINDOWS-LIVE.txt"
+          @"
+          PostureRecognition-Live-V243 Windows live serial app
+
+          启动步骤：
+          1. 解压整个 PostureRecognition-Live-Windows-V243.zip。
+          2. 不要只复制单独EXE。
+          3. 将压力坐垫连接到Windows电脑。
+          4. 打开设备管理器，确认设备出现为COM端口，例如COM3。
+          5. 双击 PostureRecognition-Live-V243.exe。
+          6. 点击“刷新串口”。
+          7. 选择正确的COM端口。
+          8. 点击“连接”。
+          9. 确认有效帧和FPS持续增加。
+          10. 保持坐垫空载并点击“空载校准”。
+          11. 坐下进行实时识别。
+          12. 使用结束后点击“断开”。
+
+          注意事项：
+          - Windows电脑不需要安装Python。
+          - 不需要CoolTerm。
+          - 不需要先导出CSV或BIN。
+          - 不能同时让其他串口软件占用同一个COM端口。
+          - 如果没有COM端口，需要安装坐垫USB转串口驱动。
+          - Windows首次运行可能出现SmartScreen提示。
+          - 仅运行从本项目构建出的程序。
+          - 请保留整个文件夹和 _internal 目录。
+          "@ | Set-Content -Path $readmePath -Encoding UTF8
+          if (!(Test-Path $readmePath)) {
+            throw "Missing Windows live README: $readmePath"
+          }
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Push-Location dist
+          Compress-Archive -Path "PostureRecognition-Live-V243" -DestinationPath "PostureRecognition-Live-Windows-V243.zip" -Force
+          if (!(Test-Path "PostureRecognition-Live-Windows-V243.zip")) {
+            throw "Missing ZIP: dist/PostureRecognition-Live-Windows-V243.zip"
+          }
+          Pop-Location
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: PostureRecognition-Live-Windows-V243
+          path: dist/PostureRecognition-Live-Windows-V243.zip
+          retention-days: 30
