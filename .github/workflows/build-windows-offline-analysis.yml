@@ -1,0 +1,174 @@
+name: Build Windows Offline Serial Analysis App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "posture_offline_serial_app_windows.py"
+      - "recognizer/offline_*.py"
+      - "recognizer/serial_protocol.py"
+      - "recognizer/serial_gui_core.py"
+      - "recognizer/csv_gui_core.py"
+      - "recognizer/recognizer_api.py"
+      - "recognizer/models/**"
+      - "requirements-windows.txt"
+      - ".github/workflows/build-windows-offline-analysis.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-offline-analysis:
+    name: Build Windows offline serial analysis folder app
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.13.5 x64
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13.5"
+          architecture: "x64"
+          cache: pip
+          cache-dependency-path: requirements-windows.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-windows.txt
+
+      - name: Compile check
+        shell: pwsh
+        run: |
+          python -m py_compile posture_offline_serial_app_windows.py
+          python -m py_compile recognizer/offline_serial_parser.py
+          python -m py_compile recognizer/offline_posture_analyzer.py
+          python -m py_compile recognizer/offline_analysis_gui.py
+          python -m py_compile recognizer/serial_protocol.py
+          python -m py_compile recognizer/serial_gui_core.py
+          python -m py_compile recognizer/csv_gui_core.py
+          python -m py_compile recognizer/recognizer_api.py
+
+      - name: Run offline serial parser tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_offline_serial_parser
+
+      - name: Run offline posture analyzer tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_offline_posture_analyzer
+
+      - name: Run offline analysis GUI tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_offline_analysis_gui
+
+      - name: Run serial protocol tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_serial_protocol
+
+      - name: Run serial GUI core tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_serial_gui_core
+
+      - name: Run recognizer core tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_recognizer_core
+
+      - name: Build Windows offline analysis app
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --onedir `
+            --name PostureOfflineSerialAnalysis-V243 `
+            --add-data "recognizer/models:recognizer/models" `
+            --collect-all sklearn `
+            posture_offline_serial_app_windows.py
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $appDir = "dist/PostureOfflineSerialAnalysis-V243"
+          $exePath = Join-Path $appDir "PostureOfflineSerialAnalysis-V243.exe"
+          if (!(Test-Path $exePath)) {
+            throw "Missing expected executable: $exePath"
+          }
+
+          $modelCandidates = @(
+            (Join-Path $appDir "_internal/recognizer/models"),
+            (Join-Path $appDir "recognizer/models")
+          )
+          $modelsDir = $modelCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $modelsDir) {
+            throw "recognizer/models was not found in the packaged offline analysis app."
+          }
+
+          $requiredChecks = @(
+            @{ Name = "joblib model"; Pattern = "*.joblib" },
+            @{ Name = "prototype bank JSON"; Pattern = "*prototype_bank*.json" },
+            @{ Name = "runtime config JSON"; Pattern = "*.runtime_config.json" },
+            @{ Name = "model bundle JSON"; Pattern = "*.model_bundle.json" },
+            @{ Name = "default_model.json"; Pattern = "default_model.json" }
+          )
+          foreach ($check in $requiredChecks) {
+            $matches = Get-ChildItem -Path $modelsDir -Recurse -File -Filter $check.Pattern
+            if (-not $matches) {
+              throw "Missing $($check.Name) under packaged models directory: $modelsDir"
+            }
+          }
+
+      - name: Create Windows offline README
+        shell: pwsh
+        run: |
+          $readmePath = "dist/PostureOfflineSerialAnalysis-V243/README-WINDOWS-OFFLINE-SERIAL.txt"
+          @"
+          PostureOfflineSerialAnalysis-V243 Windows offline serial analysis app
+
+          使用步骤：
+          1. 解压整个 PostureOfflineSerialAnalysis-Windows-V243.zip。
+          2. 不要只复制单独EXE，必须保留完整文件夹和 _internal 目录。
+          3. 双击 PostureOfflineSerialAnalysis-V243.exe。
+          4. 点击“选择采集文件夹”或“选择串口数据”。
+          5. 支持 raw_stream.bin。
+          6. 支持 serial_raw_data.txt。
+          7. metadata.json 应与串口文件放在同一目录；没有metadata时请手动确认方向和FPS。
+          8. 点击“开始分析”。
+          9. 查看综合坐姿、姿势占比、边界率和数据质量。
+          10. 需要保存结果时点击“导出报告”。
+
+          说明：
+          - 本软件不直接连接坐垫串口。
+          - 本软件会从串口原始数据重新解析协议并重新运行V2.4.3算法。
+          - recognition_results.csv 只可作为人工对比资料，不作为离线算法答案。
+          - Windows电脑不需要安装Python。
+          - 不需要CoolTerm。
+          - raw_stream.bin 是二进制原始字节流。
+          - serial_raw_data.txt 是可直接双击查看的大写十六进制串口包文本。
+          "@ | Set-Content -Path $readmePath -Encoding UTF8
+          if (!(Test-Path $readmePath)) {
+            throw "Missing Windows offline README: $readmePath"
+          }
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Push-Location dist
+          Compress-Archive -Path "PostureOfflineSerialAnalysis-V243" -DestinationPath "PostureOfflineSerialAnalysis-Windows-V243.zip" -Force
+          if (!(Test-Path "PostureOfflineSerialAnalysis-Windows-V243.zip")) {
+            throw "Missing ZIP: dist/PostureOfflineSerialAnalysis-Windows-V243.zip"
+          }
+          Pop-Location
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: PostureOfflineSerialAnalysis-Windows-V243
+          path: dist/PostureOfflineSerialAnalysis-Windows-V243.zip
+          retention-days: 30

@@ -170,6 +170,36 @@ metadata.json
 
 `raw_stream.bin` 保存串口实际收到的二进制原始字节流，用于精确回放和底层排查，不能作为压缩包打开；`serial_raw_data.txt` 只保存成功解析出的完整有效数据包，每行是263字节的大写十六进制文本，可直接双击用TextEdit或Notepad查看；`pressure_frames.csv` 保存应用当前方向设置后的16×16压力帧，并保持与现有CSV读取器兼容；`recognition_results.csv` 保存实际完成推理的识别结果。有效压力帧数量可能大于识别结果数量，这是实时丢旧保新策略下的正常情况。
 
+## 离线串口坐姿分析软件
+
+项目现在同时包含三类桌面软件：
+
+1. 实时串口版：直接连接压力坐垫，实时显示热力图和识别结果，并可采集保存串口数据。
+2. CSV回放版：用于逐帧回放和调试既有CSV压力矩阵文件。
+3. 离线串口分析版：导入 `raw_stream.bin` 或 `serial_raw_data.txt`，重新解析串口协议，重新运行 `v2_4_3_candidate` 完整识别算法，并给出整段采集数据的综合坐姿结论。
+
+macOS离线分析入口：
+
+```bash
+python3 posture_offline_serial_app_macos.py
+```
+
+Windows离线分析入口文件：
+
+```text
+posture_offline_serial_app_windows.py
+```
+
+离线分析支持：
+
+- 选择一次实时采集生成的文件夹；
+- 直接选择 `raw_stream.bin`；
+- 直接选择 `serial_raw_data.txt`；
+- 自动读取同目录的 `metadata.json` 作为方向、FPS和人工采集标签参考；
+- 重新输出逐帧识别结果、姿势片段、串口解析报告和综合分析JSON。
+
+注意：`recognition_results.csv` 是实时软件过去生成的结果，只能作为对比资料，不会作为离线算法答案；`pressure_frames.csv` 也不是本轮离线算法的主要输入。离线软件会从真正的串口数据重新解析并识别。
+
 ## 统一识别API
 
 硬件端只需持续提供一个16×16压力帧：
