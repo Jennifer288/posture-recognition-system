@@ -158,6 +158,42 @@ class SerialFrameReaderTest(unittest.TestCase):
         with patch("recognizer.frame_reader._load_serial_comports", return_value=lambda: ports):
             self.assertEqual(list_serial_ports(), ports)
 
+    def test_raw_chunk_listener_runs_before_parser_feed(self) -> None:
+        packet = build_packet()
+        fake = FakeSerial([packet])
+        observed: list[tuple[bytes, int]] = []
+        reader = self.make_reader(fake)
+        reader.raw_chunk_listener = lambda chunk: observed.append((chunk, reader.parser.valid_packets))
+
+        try:
+            reader.read_frame()
+        finally:
+            reader.stop()
+
+        self.assertEqual(observed, [(packet, 0)])
+
+    def test_parsed_frame_listener_runs_before_queue_drop(self) -> None:
+        packets = [
+            build_packet(bytes([1]) * 256),
+            build_packet(bytes([2]) * 256),
+            build_packet(bytes([3]) * 256),
+        ]
+        fake = FakeSerial(packets)
+        parsed_values: list[float] = []
+        reader = self.make_reader(fake, queue_size=1)
+        reader.parsed_frame_listener = lambda parsed: parsed_values.append(float(parsed.matrix[0, 0]))
+
+        try:
+            reader.start()
+            wait_until(lambda: reader.valid_frames >= 3)
+            frame = reader.read_frame()
+        finally:
+            reader.stop()
+
+        self.assertEqual(parsed_values, [1.0, 2.0, 3.0])
+        self.assertEqual(float(frame[0, 0]), 3.0)
+        self.assertEqual(reader.dropped_queue_frames, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

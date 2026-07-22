@@ -91,6 +91,7 @@ class RecognitionWorker:
         self.processed_frames = 0
         self.last_frame: np.ndarray | None = None
         self.last_prediction: FramePrediction | None = None
+        self.prediction_listener: Callable[[SerialRecognitionResult], None] | None = None
 
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -224,14 +225,22 @@ class RecognitionWorker:
         self.average_inference_ms = self._inference_total_ms / max(self.processed_frames, 1)
         self.last_frame = oriented
         self.last_prediction = record
-        self._enqueue_result(
-            SerialRecognitionResult(
-                frame=oriented,
-                prediction=record,
-                raw_result=dict(result),
-                inference_ms=self.inference_ms,
-            )
+        serial_result = SerialRecognitionResult(
+            frame=oriented,
+            prediction=record,
+            raw_result=dict(result),
+            inference_ms=self.inference_ms,
         )
+        self._notify_prediction(serial_result)
+        self._enqueue_result(serial_result)
+
+    def _notify_prediction(self, result: SerialRecognitionResult) -> None:
+        if self.prediction_listener is None:
+            return
+        try:
+            self.prediction_listener(result)
+        except BaseException as exc:
+            self.last_error = exc
 
     def _enqueue_result(self, result: SerialRecognitionResult) -> None:
         try:

@@ -139,6 +139,37 @@ v2_4_3_candidate
 
 请保留解压后的整个 `PostureRecognition-V243/` 文件夹，不要只单独复制EXE。
 
+## 实时串口数据采集
+
+macOS和Windows实时串口版共用同一套采集功能。采集前先连接压力坐垫串口并完成空载校准，然后按以下流程录制：
+
+1. 输入采集标签，例如 `端正坐姿`。
+2. 输入采集次数，例如 `1`。
+3. 点击“选择保存目录”。
+4. 点击“开始采集”。
+5. 保持坐垫空载约3秒。
+6. 坐下并稳定保持10到15秒。
+7. 起身并保持空载约3秒。
+8. 点击“停止采集”。
+
+每次采集会创建独立目录：
+
+```text
+<label>_<trial>_<YYYYMMDD_HHMMSS>/
+```
+
+目录内包含：
+
+```text
+raw_stream.bin
+serial_raw_data.txt
+pressure_frames.csv
+recognition_results.csv
+metadata.json
+```
+
+`raw_stream.bin` 保存串口实际收到的二进制原始字节流，用于精确回放和底层排查，不能作为压缩包打开；`serial_raw_data.txt` 只保存成功解析出的完整有效数据包，每行是263字节的大写十六进制文本，可直接双击用TextEdit或Notepad查看；`pressure_frames.csv` 保存应用当前方向设置后的16×16压力帧，并保持与现有CSV读取器兼容；`recognition_results.csv` 保存实际完成推理的识别结果。有效压力帧数量可能大于识别结果数量，这是实时丢旧保新策略下的正常情况。
+
 ## 统一识别API
 
 硬件端只需持续提供一个16×16压力帧：
@@ -305,7 +336,7 @@ python3 -m unittest recognizer.tests.test_recognizer_core
 - 座面传感器无法直接观察肩膀、上半身角度或靠背接触
 - 躺卧类暂不适用于普通办公椅场景
 - 候选侧向模型尚未替换正式默认版本
-- 当前仓库主要提供CSV回放接口；实时硬件接入可通过统一Recognizer API完成
+- 当前仓库同时提供CSV回放和实时串口识别；新增训练数据仍需按完整CSV文件分组验证
 
 ## License
 

@@ -12,7 +12,7 @@ import numpy as np
 
 from .data_loader import read_sensor_csv
 from .feature_extractor import FRAME_SHAPE, as_frame
-from .serial_protocol import PressurePacketParser
+from .serial_protocol import ParsedPressureFrame, PressurePacketParser
 
 
 DEFAULT_SERIAL_BAUDRATE = 460800
@@ -73,6 +73,8 @@ class SerialFrameReader(FrameReader):
     queue_size: int = 3
     read_size: int = DEFAULT_SERIAL_READ_SIZE
     serial_factory: Callable[..., Any] | None = None
+    raw_chunk_listener: Callable[[bytes], None] | None = None
+    parsed_frame_listener: Callable[[ParsedPressureFrame], None] | None = None
 
     parser: PressurePacketParser = field(init=False)
     received_bytes: int = field(init=False, default=0)
@@ -201,15 +203,33 @@ class SerialFrameReader(FrameReader):
                 continue
             chunk_bytes = bytes(chunk)
             self.received_bytes += len(chunk_bytes)
+            self._notify_raw_chunk(chunk_bytes)
             try:
                 parsed_frames = self.parser.feed(chunk_bytes)
             except BaseException as exc:
                 self.last_error = exc
                 break
             for parsed in parsed_frames:
+                self._notify_parsed_frame(parsed)
                 self._enqueue_frame(parsed.matrix)
                 self.valid_frames += 1
                 self._record_frame_timestamp()
+
+    def _notify_raw_chunk(self, chunk: bytes) -> None:
+        if self.raw_chunk_listener is None:
+            return
+        try:
+            self.raw_chunk_listener(chunk)
+        except BaseException as exc:
+            self.last_error = exc
+
+    def _notify_parsed_frame(self, parsed: ParsedPressureFrame) -> None:
+        if self.parsed_frame_listener is None:
+            return
+        try:
+            self.parsed_frame_listener(parsed)
+        except BaseException as exc:
+            self.last_error = exc
 
     def _enqueue_frame(self, frame: np.ndarray) -> None:
         try:

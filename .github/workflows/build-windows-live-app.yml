@@ -44,6 +44,7 @@ jobs:
           python -m py_compile posture_serial_app_windows.py
           python -m py_compile recognizer/serial_gui.py
           python -m py_compile recognizer/serial_gui_core.py
+          python -m py_compile recognizer/serial_recorder.py
           python -m py_compile recognizer/frame_reader.py
           python -m py_compile recognizer/serial_protocol.py
           python -m py_compile recognizer/recognizer_api.py
@@ -59,6 +60,10 @@ jobs:
       - name: Run serial GUI core tests
         shell: pwsh
         run: python -m unittest recognizer.tests.test_serial_gui_core
+
+      - name: Run serial recorder tests
+        shell: pwsh
+        run: python -m unittest recognizer.tests.test_serial_recorder
 
       - name: Run Windows serial compatibility tests
         shell: pwsh
@@ -136,6 +141,20 @@ jobs:
           10. 保持坐垫空载并点击“空载校准”。
           11. 坐下进行实时识别。
           12. 使用结束后点击“断开”。
+
+          数据采集：
+          1. 连接串口并完成空载校准。
+          2. 输入采集标签，例如“端正坐姿”。
+          3. 输入采集次数，例如1。
+          4. 点击“选择保存目录”。
+          5. 点击“开始采集”。
+          6. 保持坐垫空载约3秒。
+          7. 坐下并稳定保持10到15秒。
+          8. 起身并保持空载约3秒。
+          9. 点击“停止采集”。
+          10. 每次采集会生成 raw_stream.bin、serial_raw_data.txt、pressure_frames.csv、recognition_results.csv 和 metadata.json。
+          11. serial_raw_data.txt 可直接双击用Notepad查看，每行是一包有效263字节串口数据的大写十六进制文本。
+          12. raw_stream.bin 是二进制原始字节流，不能作为压缩包打开；pressure_frames.csv 是解析后的16×16压力矩阵。
 
           注意事项：
           - Windows电脑不需要安装Python。
