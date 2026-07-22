@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -547,8 +548,9 @@ class OfflineAnalysisGuiStructureTest(unittest.TestCase):
             )
         }
         app = SimpleNamespace(**variables)
+        input_path = Path("tmp") / "capture" / "raw_stream.bin"
         result = SimpleNamespace(
-            input_path="/tmp/capture/raw_stream.bin",
+            input_path=str(input_path),
             input_type="BIN",
             fps=20.05,
             fps_source="metadata",
@@ -561,8 +563,8 @@ class OfflineAnalysisGuiStructureTest(unittest.TestCase):
 
         gui.PostureOfflineSerialApp._update_file_and_parse_info(app, result)
 
-        app.input_file_var.set.assert_called_once_with("raw_stream.bin")
-        app.input_directory_var.set.assert_called_once_with("/tmp/capture")
+        app.input_file_var.set.assert_called_once_with(input_path.name)
+        app.input_directory_var.set.assert_called_once_with(str(input_path.parent))
         app.manual_label_trial_var.set.assert_called_once_with("test · 第1次")
         app.capture_time_var.set.assert_called_once_with("2026-07-22 13:41:07")
         app.data_complete_var.set.assert_called_once_with("完整")
