@@ -7,6 +7,21 @@ import numpy as np
 
 FEATURE_DIM = 264
 FRAME_SHAPE = (16, 16)
+FEATURE_NAMES = (
+    tuple(f"norm_r{row:02d}_c{col:02d}" for row in range(16) for col in range(16))
+    + (
+        "log_total_div_10",
+        "cop_x_div_15",
+        "cop_y_div_15",
+        "left_right_balance",
+        "front_back_balance",
+        "normalized_spread",
+        "peak_share",
+        "active_share_gt_20",
+    )
+)
+if len(FEATURE_NAMES) != FEATURE_DIM:
+    raise RuntimeError(f"Feature name count changed: expected {FEATURE_DIM}, got {len(FEATURE_NAMES)}")
 
 
 @dataclass(frozen=True)
