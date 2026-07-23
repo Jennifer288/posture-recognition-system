@@ -618,9 +618,20 @@ class PostureSerialApp:
             messagebox.showerror("保存失败", f"采集保存失败：{exc}")
             return
 
+        try:
+            self.reader.begin_recording_boundary(
+                raw_chunk_listener=recorder.record_raw_chunk,
+                parsed_frame_listener=recorder.record_parsed_frame,
+            )
+        except Exception as exc:
+            recorder.stop(serial_reader_stats_end=self.reader.stats())
+            self.recorder = None
+            self.capture_status_var.set("保存失败")
+            self.capture_error_var.set(str(exc))
+            messagebox.showerror("保存失败", f"采集边界同步失败：{exc}")
+            return
+
         self.recorder = recorder
-        self.reader.raw_chunk_listener = recorder.record_raw_chunk
-        self.reader.parsed_frame_listener = recorder.record_parsed_frame
         self.worker.prediction_listener = recorder.record_prediction
         self.capture_status_var.set(f"正在采集：{label} · 第{trial}次")
         self.capture_dir_var.set(str(capture_dir))

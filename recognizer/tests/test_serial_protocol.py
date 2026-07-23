@@ -185,6 +185,24 @@ class PressurePacketParserTest(unittest.TestCase):
         self.assertEqual(parser.feed(b""), [])
         self.assertEqual(parser.valid_packets, 0)
 
+    def test_clear_buffered_bytes_drops_partial_packet_without_resetting_stats(self) -> None:
+        parser = PressurePacketParser()
+        packet = build_packet(bytes([8]) * PAYLOAD_SIZE)
+
+        self.assertEqual(parser.feed(b"noise" + packet[:120]), [])
+        valid_before = parser.valid_packets
+        invalid_before = parser.invalid_packets
+        discarded_before = parser.discarded_bytes
+
+        cleared = parser.clear_buffered_bytes()
+        frames = parser.feed(packet[120:])
+
+        self.assertEqual(cleared, 120)
+        self.assertEqual(frames, [])
+        self.assertEqual(parser.valid_packets, valid_before)
+        self.assertEqual(parser.invalid_packets, invalid_before)
+        self.assertGreaterEqual(parser.discarded_bytes, discarded_before)
+
 
 if __name__ == "__main__":
     unittest.main()

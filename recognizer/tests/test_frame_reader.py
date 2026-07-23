@@ -3,12 +3,18 @@ from __future__ import annotations
 import time
 import unittest
 from collections import deque
+from pathlib import Path
+from queue import Empty, Queue
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 
+from recognizer.data_loader import read_sensor_csv
 from recognizer.frame_reader import SerialFrameReader, list_serial_ports
+from recognizer.serial_protocol import PressurePacketParser
+from recognizer.serial_recorder import SerialDataRecorder
 from recognizer.tests.test_serial_protocol import build_packet
 
 
@@ -28,6 +34,30 @@ class FakeSerial:
             return self.chunks.popleft()
         time.sleep(0.005)
         return b""
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class BlockingFakeSerial:
+    def __init__(self) -> None:
+        self.chunks: Queue[bytes | BaseException] = Queue()
+        self.kwargs: dict[str, object] = {}
+        self.closed = False
+        self.read_calls = 0
+
+    def push(self, chunk: bytes | BaseException) -> None:
+        self.chunks.put(chunk)
+
+    def read(self, size: int) -> bytes:
+        self.read_calls += 1
+        try:
+            chunk = self.chunks.get(timeout=0.02)
+        except Empty:
+            return b""
+        if isinstance(chunk, BaseException):
+            raise chunk
+        return chunk
 
     def close(self) -> None:
         self.closed = True
@@ -193,6 +223,86 @@ class SerialFrameReaderTest(unittest.TestCase):
         self.assertEqual(parsed_values, [1.0, 2.0, 3.0])
         self.assertEqual(float(frame[0, 0]), 3.0)
         self.assertEqual(reader.dropped_queue_frames, 2)
+
+    def test_begin_recording_boundary_discards_cross_boundary_packet_and_old_queue(self) -> None:
+        first = build_packet(bytes([11]) * 256)
+        second = build_packet(bytes([22]) * 256)
+        third = build_packet(bytes([33]) * 256)
+        fake = BlockingFakeSerial()
+        reader = self.make_reader(fake, queue_size=8)
+        raw_chunks: list[bytes] = []
+        parsed_packets: list[bytes] = []
+
+        try:
+            reader.start()
+            fake.push(first[:120])
+            wait_until(lambda: reader.parser.buffered_bytes == 120)
+            reader._enqueue_frame(np.full((16, 16), 99, dtype=np.float32))
+
+            boundary = reader.begin_recording_boundary(
+                raw_chunk_listener=raw_chunks.append,
+                parsed_frame_listener=lambda parsed: parsed_packets.append(parsed.raw_packet),
+            )
+            fake.push(first[120:] + second + third)
+            wait_until(lambda: len(parsed_packets) == 2)
+        finally:
+            reader.stop()
+
+        recorded_raw = b"".join(raw_chunks)
+        replayed = PressurePacketParser().feed(recorded_raw)
+        self.assertEqual(boundary.buffered_bytes_cleared, 120)
+        self.assertEqual(boundary.queued_frames_cleared, 1)
+        self.assertEqual(recorded_raw, first[120:] + second + third)
+        self.assertEqual(parsed_packets, [second, third])
+        self.assertEqual([frame.raw_packet for frame in replayed], [second, third])
+        self.assertEqual(reader.valid_frames, 2)
+
+    def test_capture_boundary_aligns_raw_stream_serial_text_and_pressure_csv(self) -> None:
+        first = build_packet(bytes([41]) * 256)
+        second = build_packet(bytes([42]) * 256)
+        third = build_packet(bytes([43]) * 256)
+        fake = BlockingFakeSerial()
+        reader = self.make_reader(fake, queue_size=8)
+
+        with TemporaryDirectory() as tmp:
+            recorder = SerialDataRecorder(queue_size=64)
+            try:
+                reader.start()
+                fake.push(first[:120])
+                wait_until(lambda: reader.parser.buffered_bytes == 120)
+                reader._enqueue_frame(np.full((16, 16), 99, dtype=np.float32))
+                recorder.start(
+                    output_root=Path(tmp),
+                    label="端正坐姿",
+                    trial=1,
+                    serial_port="/dev/cu.TEST",
+                    baudrate=460800,
+                    orientation="原始",
+                    model_version="v2_4_3_candidate",
+                )
+
+                reader.begin_recording_boundary(
+                    raw_chunk_listener=recorder.record_raw_chunk,
+                    parsed_frame_listener=recorder.record_parsed_frame,
+                )
+                fake.push(first[120:] + second + third)
+                wait_until(lambda: recorder.stats()["valid_frames_saved"] == 2)
+            finally:
+                reader.stop()
+                recorder.stop(serial_reader_stats_end=reader.stats())
+
+            assert recorder.capture_dir is not None
+            raw = (recorder.capture_dir / "raw_stream.bin").read_bytes()
+            serial_lines = (recorder.capture_dir / "serial_raw_data.txt").read_text(encoding="ascii").splitlines()
+            _timestamps, frames = read_sensor_csv(recorder.capture_dir / "pressure_frames.csv")
+
+        replayed_packets = [frame.raw_packet for frame in PressurePacketParser().feed(raw)]
+        self.assertEqual(raw, first[120:] + second + third)
+        self.assertEqual(replayed_packets, [second, third])
+        self.assertEqual(serial_lines, [" ".join(f"{byte:02X}" for byte in second), " ".join(f"{byte:02X}" for byte in third)])
+        self.assertEqual(frames.shape, (2, 16, 16))
+        self.assertEqual(float(frames[0, 0, 0]), 42.0)
+        self.assertEqual(float(frames[1, 0, 0]), 43.0)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,15 @@ class PressurePacketParser:
         self.invalid_packets = 0
         self.discarded_bytes = 0
 
+    @property
+    def buffered_bytes(self) -> int:
+        return len(self._buffer)
+
+    def clear_buffered_bytes(self) -> int:
+        cleared = len(self._buffer)
+        self._buffer.clear()
+        return cleared
+
     def feed(self, chunk: bytes) -> list[ParsedPressureFrame]:
         if chunk:
             self._buffer.extend(chunk)

@@ -20,6 +20,23 @@ DEFAULT_SERIAL_TIMEOUT = 0.05
 DEFAULT_SERIAL_READ_SIZE = 1024
 
 
+@dataclass(frozen=True)
+class RecordingBoundaryResult:
+    buffered_bytes_cleared: int
+    queued_frames_cleared: int
+
+
+@dataclass
+class _ReaderControlRequest:
+    action: str
+    raw_chunk_listener: Callable[[bytes], None] | None = None
+    parsed_frame_listener: Callable[[ParsedPressureFrame], None] | None = None
+    clear_queue: bool = False
+    done: threading.Event | None = None
+    result: RecordingBoundaryResult | None = None
+    error: BaseException | None = None
+
+
 def _load_serial_comports() -> Callable[[], list[Any]]:
     try:
         from serial.tools import list_ports
@@ -87,6 +104,7 @@ class SerialFrameReader(FrameReader):
     _serial: Any | None = field(init=False, default=None)
     _frame_timestamps: deque[float] = field(init=False)
     _stats_lock: threading.Lock = field(init=False)
+    _control_queue: Queue[_ReaderControlRequest] = field(init=False)
 
     def __post_init__(self) -> None:
         self.parser = PressurePacketParser()
@@ -94,6 +112,7 @@ class SerialFrameReader(FrameReader):
         self._stop_event = threading.Event()
         self._frame_timestamps = deque()
         self._stats_lock = threading.Lock()
+        self._control_queue = Queue()
 
     @staticmethod
     def list_ports() -> list[Any]:
@@ -151,6 +170,28 @@ class SerialFrameReader(FrameReader):
         oriented = apply_orientation(frame, self.orientation)
         return np.asarray(oriented, dtype=np.float32)
 
+    def begin_recording_boundary(
+        self,
+        *,
+        raw_chunk_listener: Callable[[bytes], None],
+        parsed_frame_listener: Callable[[ParsedPressureFrame], None],
+        clear_queue: bool = True,
+        timeout: float = 1.0,
+    ) -> RecordingBoundaryResult:
+        request = _ReaderControlRequest(
+            action="begin_recording_boundary",
+            raw_chunk_listener=raw_chunk_listener,
+            parsed_frame_listener=parsed_frame_listener,
+            clear_queue=clear_queue,
+        )
+        result = self._submit_control_request(request, timeout=timeout)
+        assert isinstance(result, RecordingBoundaryResult)
+        return result
+
+    def end_recording_boundary(self, *, timeout: float = 1.0) -> None:
+        request = _ReaderControlRequest(action="end_recording_boundary")
+        self._submit_control_request(request, timeout=timeout)
+
     def stats(self) -> dict[str, object]:
         return {
             "received_bytes": self.received_bytes,
@@ -165,6 +206,7 @@ class SerialFrameReader(FrameReader):
     def _reset_runtime_state(self) -> None:
         self.parser.reset()
         self._queue = Queue(maxsize=max(1, int(self.queue_size)))
+        self._control_queue = Queue()
         self.received_bytes = 0
         self.valid_frames = 0
         self.dropped_queue_frames = 0
@@ -194,6 +236,7 @@ class SerialFrameReader(FrameReader):
 
     def _read_loop(self) -> None:
         while not self._stop_event.is_set():
+            self._process_control_requests()
             try:
                 chunk = self._serial.read(self.read_size) if self._serial is not None else b""
             except BaseException as exc:
@@ -214,6 +257,68 @@ class SerialFrameReader(FrameReader):
                 self._enqueue_frame(parsed.matrix)
                 self.valid_frames += 1
                 self._record_frame_timestamp()
+        self._process_control_requests()
+
+    def _submit_control_request(
+        self,
+        request: _ReaderControlRequest,
+        *,
+        timeout: float,
+    ) -> RecordingBoundaryResult | None:
+        request.done = threading.Event()
+        if not self.is_running:
+            self._execute_control_request(request)
+            if request.error is not None:
+                raise request.error
+            return request.result
+        self._control_queue.put(request)
+        if not request.done.wait(timeout=timeout):
+            raise TimeoutError(f"SerialFrameReader control request timed out: {request.action}")
+        if request.error is not None:
+            raise request.error
+        return request.result
+
+    def _process_control_requests(self) -> None:
+        while True:
+            try:
+                request = self._control_queue.get_nowait()
+            except Empty:
+                return
+            try:
+                self._execute_control_request(request)
+            except BaseException as exc:
+                request.error = exc
+                self.last_error = exc
+            finally:
+                if request.done is not None:
+                    request.done.set()
+
+    def _execute_control_request(self, request: _ReaderControlRequest) -> None:
+        if request.action == "begin_recording_boundary":
+            buffered_bytes_cleared = self.parser.clear_buffered_bytes()
+            queued_frames_cleared = self._clear_frame_queue() if request.clear_queue else 0
+            self.raw_chunk_listener = request.raw_chunk_listener
+            self.parsed_frame_listener = request.parsed_frame_listener
+            request.result = RecordingBoundaryResult(
+                buffered_bytes_cleared=buffered_bytes_cleared,
+                queued_frames_cleared=queued_frames_cleared,
+            )
+            return
+        if request.action == "end_recording_boundary":
+            self.raw_chunk_listener = None
+            self.parsed_frame_listener = None
+            request.result = RecordingBoundaryResult(buffered_bytes_cleared=0, queued_frames_cleared=0)
+            return
+        raise ValueError(f"Unknown SerialFrameReader control action: {request.action}")
+
+    def _clear_frame_queue(self) -> int:
+        cleared = 0
+        while True:
+            try:
+                self._queue.get_nowait()
+                cleared += 1
+            except Empty:
+                return cleared
 
     def _notify_raw_chunk(self, chunk: bytes) -> None:
         if self.raw_chunk_listener is None:
