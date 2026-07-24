@@ -4,6 +4,7 @@ import importlib
 import os
 from pathlib import Path
 from queue import Queue
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import threading
 import time
@@ -12,7 +13,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from recognizer.serial_gui_core import ORIENTATION_MODES, RecognitionWorker, apply_orientation
+from recognizer.frame_orientation import apply_sensor_rotation
+from recognizer.data_loader import read_sensor_csv
+from recognizer.serial_gui_core import ORIENTATION_MODES, RecognitionWorker, apply_orientation, apply_sensor_and_orientation
+from recognizer.serial_protocol import ParsedPressureFrame
+from recognizer.serial_recorder import SerialDataRecorder
 
 
 class FakeTkWidget:
@@ -40,6 +45,17 @@ class FakeTkWidget:
 
     def bind(self, *_args: object, **_kwargs: object) -> None:
         return
+
+
+class FakeVar:
+    def __init__(self, value: object = "") -> None:
+        self.value = value
+
+    def get(self) -> object:
+        return self.value
+
+    def set(self, value: object) -> None:
+        self.value = value
 
 
 def fake_widget_factory(**extra_kwargs: object):
@@ -71,6 +87,15 @@ def posture_payload(label: str = "端正坐姿") -> dict[str, object]:
         "is_boundary": False,
         "occupancy_features": {"total_pressure": 123.0, "active_points": 8},
     }
+
+
+def asymmetric_corner_frame() -> np.ndarray:
+    frame = np.zeros((16, 16), dtype=np.float32)
+    frame[0, 0] = 11.0
+    frame[0, 15] = 22.0
+    frame[15, 0] = 33.0
+    frame[15, 15] = 44.0
+    return frame
 
 
 class FakeRecognizer:
@@ -154,6 +179,29 @@ class SerialGuiCoreOrientationTest(unittest.TestCase):
         self.assertEqual(transformed.shape, (16, 16))
         self.assertTrue(transformed.flags["C_CONTIGUOUS"])
 
+    def test_sensor_rotation_and_legacy_orientation_combinations_are_explicit(self) -> None:
+        frame = asymmetric_corner_frame()
+
+        cases = {
+            (0, "原始"): np.array([[11.0, 22.0], [33.0, 44.0]], dtype=np.float32),
+            (180, "原始"): np.array([[44.0, 33.0], [22.0, 11.0]], dtype=np.float32),
+            (180, "左右翻转"): np.array([[33.0, 44.0], [11.0, 22.0]], dtype=np.float32),
+            (180, "上下翻转"): np.array([[22.0, 11.0], [44.0, 33.0]], dtype=np.float32),
+            (180, "上下及左右翻转"): np.array([[11.0, 22.0], [33.0, 44.0]], dtype=np.float32),
+        }
+
+        for (rotation, orientation), corners in cases.items():
+            with self.subTest(rotation=rotation, orientation=orientation):
+                transformed = apply_sensor_and_orientation(frame, rotation, orientation)
+                observed = np.array(
+                    [
+                        [transformed[0, 0], transformed[0, 15]],
+                        [transformed[15, 0], transformed[15, 15]],
+                    ],
+                    dtype=np.float32,
+                )
+                np.testing.assert_array_equal(observed, corners)
+
 
 class SerialGuiLayoutTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -175,6 +223,8 @@ class SerialGuiLayoutTest(unittest.TestCase):
             capture_queue_var=object(),
             capture_dropped_var=object(),
             capture_error_var=object(),
+            sensor_rotation_var=object(),
+            sensor_rotation_status_var=object(),
             connection_var=object(),
             current_port_var=object(),
             baud_var=object(),
@@ -282,6 +332,188 @@ class SerialGuiLayoutTest(unittest.TestCase):
         self.assertEqual(start_button.kwargs.get("style"), serial_gui.SERIAL_PRIMARY_BUTTON_STYLE)
         self.assertEqual(start_button.kwargs.get("state"), "disabled")
         self.assertEqual(stop_button.kwargs.get("style"), serial_gui.SERIAL_DANGER_BUTTON_STYLE)
+
+    def test_sensor_rotation_options_are_explicit_and_default_to_legacy_installation(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        self.assertEqual(serial_gui.SENSOR_ROTATION_OPTIONS[0], "0°（插电口朝前 / 旧安装方式）")
+        self.assertEqual(serial_gui.SENSOR_ROTATION_OPTIONS[1], "180°（插电口朝后 / 沙发安装）")
+        self.assertEqual(serial_gui.sensor_rotation_degrees_from_label(serial_gui.SENSOR_ROTATION_OPTIONS[0]), 0)
+        self.assertEqual(serial_gui.sensor_rotation_degrees_from_label(serial_gui.SENSOR_ROTATION_OPTIONS[1]), 180)
+
+    def test_capture_inputs_disable_sensor_rotation_while_recording(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        configured: dict[str, str] = {}
+        app = SimpleNamespace(
+            capture_label_entry=FakeTkWidget(),
+            capture_trial_entry=FakeTkWidget(),
+            capture_dir_button=FakeTkWidget(),
+            refresh_button=FakeTkWidget(),
+            connect_button=FakeTkWidget(),
+            capture_start_button=FakeTkWidget(),
+            port_combo=FakeTkWidget(),
+            orientation_combo=FakeTkWidget(),
+            sensor_rotation_combo=FakeTkWidget(),
+            reader=object(),
+            worker=object(),
+        )
+
+        serial_gui.PostureSerialApp._set_capture_inputs_enabled(app, False)
+        configured["disabled"] = app.sensor_rotation_combo.kwargs["state"]
+        serial_gui.PostureSerialApp._set_capture_inputs_enabled(app, True)
+        configured["enabled"] = app.sensor_rotation_combo.kwargs["state"]
+
+        self.assertEqual(configured, {"disabled": "disabled", "enabled": "readonly"})
+
+    def test_sensor_rotation_change_clears_queues_and_resets_recognizer(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        class Reader:
+            def __init__(self) -> None:
+                self.clear_calls = 0
+
+            def clear_pending_frames(self, *, timeout: float = 1.0) -> int:
+                self.clear_calls += 1
+                return 2
+
+        class Worker:
+            def __init__(self) -> None:
+                self.reset_calls = 0
+
+            def reset_recognizer(self, *, wait: bool = False, timeout: float = 1.0) -> None:
+                self.reset_calls += 1
+
+        reader = Reader()
+        worker = Worker()
+        result_queue: Queue[object] = Queue()
+        result_queue.put(object())
+        app = SimpleNamespace(
+            sensor_rotation_var=FakeVar(serial_gui.SENSOR_ROTATION_OPTIONS[1]),
+            sensor_rotation_state=serial_gui._ThreadSafeValue(0),
+            orientation_state=serial_gui._ThreadSafeValue("原始"),
+            sensor_rotation_status_var=FakeVar(),
+            reader=reader,
+            worker=worker,
+            result_queue=result_queue,
+            current_frame=np.ones((16, 16), dtype=np.float32),
+            current_record=object(),
+            summary_var=FakeVar(),
+            _is_recording=lambda: False,
+            _draw_heatmap=lambda frame: setattr(app, "drawn_frame", np.array(frame, copy=True)),
+            _save_settings=lambda: setattr(app, "settings_saved", True),
+        )
+        app._current_sensor_rotation_degrees = lambda: int(app.sensor_rotation_state.get())
+        app._update_sensor_rotation_status = lambda: serial_gui.PostureSerialApp._update_sensor_rotation_status(app)
+        app._reset_direction_dependent_state = lambda: serial_gui.PostureSerialApp._reset_direction_dependent_state(app)
+
+        serial_gui.PostureSerialApp._on_sensor_rotation_changed(app)
+
+        self.assertEqual(app.sensor_rotation_state.get(), 180)
+        self.assertEqual(reader.clear_calls, 1)
+        self.assertEqual(worker.reset_calls, 1)
+        self.assertEqual(result_queue.qsize(), 0)
+        self.assertIsNone(app.current_frame)
+        self.assertIsNone(app.current_record)
+        self.assertIn("Sensor rotation: 180°", app.sensor_rotation_status_var.get())
+        self.assertIn("Legacy orientation: none", app.sensor_rotation_status_var.get())
+        self.assertIn("Effective transform: rotate_180", app.sensor_rotation_status_var.get())
+        np.testing.assert_array_equal(app.drawn_frame, np.zeros((16, 16), dtype=np.float32))
+
+    def test_serial_gui_settings_persist_sensor_rotation(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        with TemporaryDirectory() as tmp:
+            settings_path = Path(tmp) / "settings.json"
+            serial_gui._save_serial_gui_settings(
+                settings_path,
+                {
+                    "sensor_rotation_degrees": 180,
+                    "orientation": "原始",
+                },
+            )
+
+            settings = serial_gui._load_serial_gui_settings(settings_path)
+
+        self.assertEqual(settings["sensor_rotation_degrees"], 180)
+        self.assertEqual(settings["orientation"], "原始")
+
+    def test_serial_gui_settings_missing_or_invalid_sensor_rotation_falls_back_to_zero(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        with TemporaryDirectory() as tmp:
+            missing_path = Path(tmp) / "missing.json"
+            invalid_path = Path(tmp) / "invalid.json"
+            invalid_path.write_text(
+                '{"orientation": "左右翻转", "sensor_rotation_degrees": 90}',
+                encoding="utf-8",
+            )
+
+            missing = serial_gui._load_serial_gui_settings(missing_path)
+            invalid = serial_gui._load_serial_gui_settings(invalid_path)
+
+        self.assertEqual(missing["sensor_rotation_degrees"], 0)
+        self.assertEqual(invalid["sensor_rotation_degrees"], 0)
+        self.assertEqual(invalid["orientation"], "左右翻转")
+
+    def test_transform_diagnostics_make_legacy_double_rotation_visible(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        none_lines = serial_gui._serial_transform_diagnostic_lines(180, "原始")
+        double_lines = serial_gui._serial_transform_diagnostic_lines(180, "上下及左右翻转")
+
+        self.assertIn("Sensor installation rotation: 180", none_lines)
+        self.assertIn("Legacy data orientation: none", none_lines)
+        self.assertIn("Effective transform: rotate_180", none_lines)
+        self.assertIn("Worker rotation: 180", none_lines)
+        self.assertIn("Recorder rotation: 180", none_lines)
+        self.assertIn("Legacy data orientation: 上下及左右翻转", double_lines)
+        self.assertIn("Effective transform: rotate_180 + legacy:上下及左右翻转", double_lines)
+
+    def test_orientation_change_updates_effective_transform_status(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        app = SimpleNamespace(
+            orientation_var=FakeVar("上下及左右翻转"),
+            orientation_state=serial_gui._ThreadSafeValue("原始"),
+            sensor_rotation_state=serial_gui._ThreadSafeValue(180),
+            sensor_rotation_status_var=FakeVar(),
+            reader=None,
+            worker=None,
+            result_queue=None,
+            current_frame=None,
+            current_record=None,
+            _draw_heatmap=lambda _frame: None,
+            _save_settings=lambda: None,
+        )
+        app._current_sensor_rotation_degrees = lambda: int(app.sensor_rotation_state.get())
+        app._update_sensor_rotation_status = lambda: serial_gui.PostureSerialApp._update_sensor_rotation_status(app)
+        app._reset_direction_dependent_state = lambda: serial_gui.PostureSerialApp._reset_direction_dependent_state(app)
+
+        serial_gui.PostureSerialApp._on_orientation_changed(app)
+
+        self.assertEqual(app.orientation_state.get(), "上下及左右翻转")
+        self.assertIn("Sensor rotation: 180°", app.sensor_rotation_status_var.get())
+        self.assertIn("Legacy orientation: 上下及左右翻转", app.sensor_rotation_status_var.get())
+        self.assertIn("Effective transform: rotate_180 + legacy:上下及左右翻转", app.sensor_rotation_status_var.get())
+
+    def test_connect_diagnostics_print_internal_rotation_values(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        app = SimpleNamespace(
+            sensor_rotation_state=serial_gui._ThreadSafeValue(180),
+            orientation_state=serial_gui._ThreadSafeValue("原始"),
+        )
+        app._current_sensor_rotation_degrees = lambda: int(app.sensor_rotation_state.get())
+
+        with patch("builtins.print") as print_mock:
+            serial_gui.PostureSerialApp._print_transform_diagnostics(app)
+
+        printed = [call.args[0] for call in print_mock.call_args_list]
+        self.assertIn("Sensor installation rotation: 180", printed)
+        self.assertIn("Legacy data orientation: none", printed)
+        self.assertIn("Effective transform: rotate_180", printed)
+        self.assertIn("Worker rotation: 180", printed)
 
     def test_recognition_info_panel_expands_with_right_column(self) -> None:
         import recognizer.serial_gui as serial_gui
@@ -560,6 +792,8 @@ class RecognitionWorkerTest(unittest.TestCase):
         *,
         result_queue_size: int = 3,
         clock: StepClock | None = None,
+        orientation_mode: str = "原始",
+        sensor_rotation_degrees: int = 0,
     ) -> tuple[RecognitionWorker, Queue[object], Queue[np.ndarray]]:
         source = frame_queue or Queue(maxsize=10)
         results: Queue[object] = Queue(maxsize=result_queue_size)
@@ -567,7 +801,8 @@ class RecognitionWorkerTest(unittest.TestCase):
             frame_source=source,
             recognizer=recognizer,
             result_queue=results,
-            orientation_mode="原始",
+            orientation_mode=orientation_mode,
+            sensor_rotation_degrees=sensor_rotation_degrees,
             connection_start_time=100.0,
             clock=clock or StepClock(),
             poll_timeout=0.02,
@@ -588,6 +823,104 @@ class RecognitionWorkerTest(unittest.TestCase):
             worker.stop()
 
         self.assertEqual([float(item[0, 0]) for item in recognizer.predict_frames], [1.0, 2.0, 3.0])
+
+    def test_worker_applies_sensor_rotation_before_existing_orientation(self) -> None:
+        recognizer = FakeRecognizer()
+        worker, results, frames = self.make_worker(
+            recognizer,
+            orientation_mode="左右翻转",
+            sensor_rotation_degrees=180,
+        )
+        raw_physical = np.arange(256, dtype=np.float32).reshape(16, 16)
+
+        try:
+            worker.start()
+            frames.put(raw_physical)
+            result = results.get(timeout=0.8)
+        finally:
+            worker.stop()
+
+        expected = apply_orientation(apply_sensor_rotation(raw_physical, 180), "左右翻转")
+        np.testing.assert_array_equal(recognizer.predict_frames[0], expected)
+        np.testing.assert_array_equal(result.frame, expected)
+
+    def test_full_realtime_chain_uses_same_canonical_corner_frame_for_heatmap_recognizer_and_csv(self) -> None:
+        import recognizer.serial_gui as serial_gui
+
+        recognizer = FakeRecognizer()
+        worker, results, frames = self.make_worker(
+            recognizer,
+            orientation_mode="原始",
+            sensor_rotation_degrees=180,
+        )
+        physical = asymmetric_corner_frame()
+        expected = apply_sensor_and_orientation(physical, 180, "原始")
+
+        try:
+            worker.start()
+            frames.put(physical)
+            result = results.get(timeout=0.8)
+        finally:
+            worker.stop()
+
+        variables = {
+            name: FakeVar()
+            for name in (
+                "total_var",
+                "max_var",
+                "max_adc_var",
+                "active_var",
+                "state_var",
+                "occupancy_var",
+                "posture_var",
+                "raw_var",
+                "confidence_var",
+                "second_var",
+                "margin_var",
+                "boundary_var",
+                "boundary_reason_var",
+                "prototype_var",
+                "frame_index_var",
+                "uptime_var",
+                "inference_var",
+                "average_inference_var",
+                "summary_status_var",
+                "summary_posture_var",
+                "summary_confidence_var",
+                "summary_boundary_var",
+            )
+        }
+        app = SimpleNamespace(
+            **variables,
+            worker=SimpleNamespace(average_inference_ms=None),
+            _draw_heatmap=lambda frame: setattr(app, "heatmap_frame", np.array(frame, copy=True)),
+        )
+        serial_gui.PostureSerialApp._render_result(app, result)
+
+        with TemporaryDirectory() as tmp:
+            recorder = SerialDataRecorder(queue_size=8)
+            recorder.start(
+                output_root=Path(tmp),
+                label="端正坐姿",
+                trial=1,
+                serial_port="COM3",
+                baudrate=460800,
+                orientation="原始",
+                sensor_rotation_degrees=180,
+                model_version="v2_4_3_candidate",
+            )
+            recorder.record_parsed_frame(ParsedPressureFrame(matrix=physical, checksum=0, raw_packet=b"packet"))
+            recorder.stop()
+            _timestamps, csv_frames = read_sensor_csv(recorder.capture_dir / "pressure_frames.csv")
+
+        self.assertEqual(expected[0, 0], 44.0)
+        self.assertEqual(expected[0, 15], 33.0)
+        self.assertEqual(expected[15, 0], 22.0)
+        self.assertEqual(expected[15, 15], 11.0)
+        np.testing.assert_array_equal(recognizer.predict_frames[0], expected)
+        np.testing.assert_array_equal(result.frame, expected)
+        np.testing.assert_array_equal(app.heatmap_frame, expected)
+        np.testing.assert_array_equal(csv_frames[0], expected)
 
     def test_prediction_listener_receives_completed_recognition_results(self) -> None:
         recognizer = FakeRecognizer()

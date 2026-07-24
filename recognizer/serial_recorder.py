@@ -15,7 +15,8 @@ from typing import Any
 import numpy as np
 
 from .csv_gui_core import FramePrediction
-from .serial_gui_core import SerialRecognitionResult, apply_orientation
+from .frame_orientation import orientation_transform_name
+from .serial_gui_core import SerialRecognitionResult, apply_sensor_and_orientation
 from .serial_protocol import PACKET_SIZE, ParsedPressureFrame
 
 
@@ -25,6 +26,8 @@ DIR_TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 ILLEGAL_WINDOWS_FILENAME_CHARS = r'<>:"/\\|?*'
 SERIAL_TEXT_FILENAME = "serial_raw_data.txt"
 SERIAL_TEXT_FORMAT = "uppercase hexadecimal bytes, one valid 263-byte packet per line"
+PRESSURE_FRAMES_FILENAME = "pressure_frames.csv"
+PRESSURE_FRAMES_RAW_FILENAME = "pressure_frames_raw.csv"
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class SerialDataRecorder:
 
         self._raw_handle: Any | None = None
         self._frame_handle: Any | None = None
+        self._raw_frame_handle: Any | None = None
         self._serial_text_handle: Any | None = None
         self._prediction_handle: Any | None = None
         self._prediction_writer: csv.DictWriter | None = None
@@ -80,6 +84,7 @@ class SerialDataRecorder:
         baudrate: int,
         orientation: str,
         model_version: str,
+        sensor_rotation_degrees: int = 0,
         serial_reader_stats_start: dict[str, Any] | None = None,
     ) -> Path:
         if self.is_recording:
@@ -89,6 +94,8 @@ class SerialDataRecorder:
             trial_int = int(trial)
             if trial_int <= 0:
                 raise ValueError("trial must be a positive integer")
+            sensor_rotation = int(sensor_rotation_degrees)
+            transform_name = orientation_transform_name(sensor_rotation)
             root = Path(output_root)
             root.mkdir(parents=True, exist_ok=True)
             capture_dir = self._unique_capture_dir(root, sanitize_capture_label(label), trial_int)
@@ -108,7 +115,8 @@ class SerialDataRecorder:
             self._start_monotonic = float(self.clock())
 
             self._raw_handle = (capture_dir / "raw_stream.bin").open("wb")
-            self._frame_handle = (capture_dir / "pressure_frames.csv").open("w", encoding="ascii", newline="")
+            self._frame_handle = (capture_dir / PRESSURE_FRAMES_FILENAME).open("w", encoding="ascii", newline="")
+            self._raw_frame_handle = (capture_dir / PRESSURE_FRAMES_RAW_FILENAME).open("w", encoding="ascii", newline="")
             self._serial_text_handle = (capture_dir / SERIAL_TEXT_FILENAME).open("w", encoding="ascii", newline="")
             self._prediction_handle = (capture_dir / "recognition_results.csv").open("w", encoding="utf-8-sig", newline="")
             self._prediction_writer = csv.DictWriter(self._prediction_handle, fieldnames=_prediction_fieldnames())
@@ -123,6 +131,11 @@ class SerialDataRecorder:
                 "serial_port": str(serial_port),
                 "baudrate": int(baudrate),
                 "orientation": str(orientation),
+                "sensor_rotation_degrees": sensor_rotation,
+                "orientation_transform": transform_name,
+                "physical_frame_saved": True,
+                "canonical_frame_saved": True,
+                "canonical_orientation": "legacy_training_orientation",
                 "model_version": str(model_version),
                 "start_time": start_time.isoformat(timespec="microseconds"),
                 "end_time": None,
@@ -133,6 +146,12 @@ class SerialDataRecorder:
                 "predictions_saved": 0,
                 "serial_text_filename": SERIAL_TEXT_FILENAME,
                 "serial_text_format": SERIAL_TEXT_FORMAT,
+                "serial_text_transform": "none",
+                "pressure_frames_filename": PRESSURE_FRAMES_FILENAME,
+                "pressure_frames_format": "canonical model-facing 16x16 pressure matrix",
+                "pressure_frames_raw_filename": PRESSURE_FRAMES_RAW_FILENAME,
+                "pressure_frames_raw_format": "raw physical 16x16 pressure matrix from serial protocol parser",
+                "raw_stream_transform": "none",
                 "checksum_validation_enabled": False,
                 "packet_size": PACKET_SIZE,
                 "matrix_shape": [16, 16],
@@ -196,8 +215,12 @@ class SerialDataRecorder:
     def record_parsed_frame(self, parsed_frame: ParsedPressureFrame | np.ndarray) -> None:
         raw_packet = parsed_frame.raw_packet if isinstance(parsed_frame, ParsedPressureFrame) else None
         matrix = parsed_frame.matrix if isinstance(parsed_frame, ParsedPressureFrame) else parsed_frame
-        frame = apply_orientation(np.asarray(matrix, dtype=np.float32), str(self._metadata.get("orientation", "原始")))
-        self._enqueue("frame", (frame, raw_packet))
+        physical_frame = np.asarray(matrix, dtype=np.float32)
+        sensor_rotation = int(self._metadata.get("sensor_rotation_degrees", 0))
+        # The protocol parser produces a raw physical frame. The shared transform keeps
+        # CSV output aligned with the live heatmap and Recognizer input.
+        frame = apply_sensor_and_orientation(physical_frame, sensor_rotation, str(self._metadata.get("orientation", "原始")))
+        self._enqueue("frame", (frame, raw_packet, np.ascontiguousarray(physical_frame, dtype=np.float32)))
 
     def record_prediction(self, result: SerialRecognitionResult | FramePrediction) -> None:
         if isinstance(result, SerialRecognitionResult):
@@ -255,8 +278,10 @@ class SerialDataRecorder:
             return
         if event.kind == "frame":
             assert self._frame_handle is not None
-            frame, raw_packet = event.payload
+            assert self._raw_frame_handle is not None
+            frame, raw_packet, physical_frame = event.payload
             self._write_pressure_frame(frame)
+            self._write_pressure_frame(physical_frame, handle=self._raw_frame_handle)
             self._valid_frames_saved += 1
             if raw_packet is not None and len(raw_packet) == PACKET_SIZE:
                 self._write_serial_text_packet(raw_packet)
@@ -269,11 +294,12 @@ class SerialDataRecorder:
             return
         raise ValueError(f"Unknown recorder event: {event.kind}")
 
-    def _write_pressure_frame(self, frame: np.ndarray) -> None:
-        assert self._frame_handle is not None
-        self._frame_handle.write(datetime.now().strftime(CSV_TIMESTAMP_FORMAT) + "\n")
+    def _write_pressure_frame(self, frame: np.ndarray, *, handle: Any | None = None) -> None:
+        target = handle or self._frame_handle
+        assert target is not None
+        target.write(datetime.now().strftime(CSV_TIMESTAMP_FORMAT) + "\n")
         for row in np.asarray(frame, dtype=np.float32):
-            self._frame_handle.write(",".join(f"{float(value):.10g}" for value in row) + "\n")
+            target.write(",".join(f"{float(value):.10g}" for value in row) + "\n")
 
     def _write_serial_text_packet(self, raw_packet: bytes) -> None:
         assert self._serial_text_handle is not None
@@ -295,7 +321,7 @@ class SerialDataRecorder:
         (self.capture_dir / "metadata.json").write_text(json.dumps(self._metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _flush_files(self) -> None:
-        for handle in (self._raw_handle, self._frame_handle, self._serial_text_handle, self._prediction_handle):
+        for handle in (self._raw_handle, self._frame_handle, self._raw_frame_handle, self._serial_text_handle, self._prediction_handle):
             if handle is None:
                 continue
             try:
@@ -304,7 +330,7 @@ class SerialDataRecorder:
                 self.last_error = exc
 
     def _close_files(self) -> None:
-        for attr in ("_raw_handle", "_frame_handle", "_serial_text_handle", "_prediction_handle"):
+        for attr in ("_raw_handle", "_frame_handle", "_raw_frame_handle", "_serial_text_handle", "_prediction_handle"):
             handle = getattr(self, attr)
             if handle is None:
                 continue

@@ -13,6 +13,7 @@ from typing import Any, Callable
 import numpy as np
 
 from .csv_gui_core import frame_record_from_result, model_export_info
+from .frame_orientation import apply_sensor_rotation, orientation_transform_name
 from .offline_serial_parser import OfflineSerialParseResult, sha256_file
 from .recognizer_api import Recognizer
 from .serial_gui_core import ORIENTATION_MODES, apply_orientation
@@ -117,6 +118,8 @@ class OfflineAnalysisResult:
     artifact_info: dict[str, Any]
     fps: float
     fps_source: str
+    sensor_rotation_degrees: int
+    sensor_orientation_transform: str
     orientation: str
     parser_stats: dict[str, Any]
     invalid_text_lines: list[dict[str, Any]]
@@ -148,14 +151,20 @@ class OfflinePostureAnalyzer:
         *,
         orientation: str | None = None,
         fps: float | None = None,
+        sensor_rotation_degrees: int | None = None,
         progress_callback: ProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
     ) -> OfflineAnalysisResult:
         metadata = dict(parse_result.selection.metadata)
         resolved_orientation, orientation_warnings = resolve_orientation(metadata, fallback_orientation=orientation)
+        resolved_sensor_rotation, rotation_warnings = resolve_sensor_rotation(
+            metadata,
+            override_rotation=sensor_rotation_degrees,
+        )
         resolved_fps, fps_source, fps_warnings = resolve_fps(metadata, manual_fps=fps)
-        warnings = list(parse_result.stats.parser_warnings) + orientation_warnings + fps_warnings
-        oriented_frames = [apply_orientation(frame, resolved_orientation) for frame in parse_result.frames]
+        warnings = list(parse_result.stats.parser_warnings) + orientation_warnings + rotation_warnings + fps_warnings
+        sensor_aligned_frames = [apply_sensor_rotation(frame, resolved_sensor_rotation) for frame in parse_result.frames]
+        oriented_frames = [apply_orientation(frame, resolved_orientation) for frame in sensor_aligned_frames]
 
         calibration_info, empty_frames = detect_initial_empty_frames(oriented_frames, resolved_fps)
         if calibration_info.calibration_warning:
@@ -216,6 +225,8 @@ class OfflinePostureAnalyzer:
             artifact_info=artifact_info,
             fps=resolved_fps,
             fps_source=fps_source,
+            sensor_rotation_degrees=resolved_sensor_rotation,
+            sensor_orientation_transform=orientation_transform_name(resolved_sensor_rotation),
             orientation=resolved_orientation,
             parser_stats=asdict(parse_result.stats),
             invalid_text_lines=[asdict(item) for item in parse_result.invalid_text_lines],
@@ -254,6 +265,29 @@ def resolve_orientation(metadata: dict[str, Any], *, fallback_orientation: str |
         return str(fallback_orientation), warnings
     warnings.append("未找到方向记录，请确认当前方向设置")
     return "原始", warnings
+
+
+def resolve_sensor_rotation(
+    metadata: dict[str, Any],
+    *,
+    override_rotation: int | str | None = None,
+) -> tuple[int, list[str]]:
+    warnings: list[str] = []
+    if override_rotation is not None:
+        rotation = int(override_rotation)
+        orientation_transform_name(rotation)
+        return rotation, warnings
+    metadata_rotation = metadata.get("sensor_rotation_degrees")
+    if metadata_rotation is not None:
+        try:
+            rotation = int(metadata_rotation)
+            orientation_transform_name(rotation)
+            return rotation, warnings
+        except (TypeError, ValueError):
+            warnings.append(f"metadata中的传感器安装方向无效: {metadata_rotation}")
+            return 0, warnings
+    warnings.append("未找到传感器安装方向记录，按0°旧安装方式分析")
+    return 0, warnings
 
 
 def resolve_fps(metadata: dict[str, Any], *, manual_fps: float | None = None) -> tuple[float, str, list[str]]:
@@ -458,6 +492,8 @@ def export_offline_analysis(result: OfflineAnalysisResult, output_root: str | Pa
         "model_artifact_identity": result.artifact_info,
         "fps": result.fps,
         "fps_source": result.fps_source,
+        "sensor_rotation_degrees": result.sensor_rotation_degrees,
+        "sensor_orientation_transform": result.sensor_orientation_transform,
         "orientation": result.orientation,
         "parser_stats": result.parser_stats,
         "invalid_text_lines": result.invalid_text_lines,

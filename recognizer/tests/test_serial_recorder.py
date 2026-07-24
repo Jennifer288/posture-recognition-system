@@ -13,6 +13,7 @@ import numpy as np
 
 from recognizer.csv_gui_core import FramePrediction
 from recognizer.data_loader import read_sensor_csv
+from recognizer.frame_orientation import apply_sensor_rotation
 from recognizer.serial_gui_core import SerialRecognitionResult, apply_orientation
 from recognizer.serial_protocol import ParsedPressureFrame
 from recognizer.serial_recorder import SerialDataRecorder, sanitize_capture_label
@@ -57,6 +58,7 @@ class SerialDataRecorderTest(unittest.TestCase):
             serial_port=kwargs.get("serial_port", "COM3"),
             baudrate=kwargs.get("baudrate", 460800),
             orientation=kwargs.get("orientation", "原始"),
+            sensor_rotation_degrees=kwargs.get("sensor_rotation_degrees", 0),
             model_version=kwargs.get("model_version", "v2_4_3_candidate"),
             serial_reader_stats_start={"received_bytes": 0, "valid_frames": 0},
         )
@@ -164,6 +166,33 @@ class SerialDataRecorderTest(unittest.TestCase):
 
         np.testing.assert_array_equal(frames[0], apply_orientation(frame, "左右翻转"))
 
+    def test_sensor_rotation_saves_canonical_frame_and_raw_physical_frame(self) -> None:
+        frame = np.arange(256, dtype=np.float32).reshape((16, 16))
+        parsed = ParsedPressureFrame(matrix=frame, checksum=0, raw_packet=b"packet")
+        with TemporaryDirectory() as tmp:
+            recorder = self.start_recorder(Path(tmp), orientation="原始", sensor_rotation_degrees=180)
+            recorder.record_parsed_frame(parsed)
+            recorder.stop()
+
+            _canonical_timestamps, canonical_frames = read_sensor_csv(recorder.capture_dir / "pressure_frames.csv")
+            _raw_timestamps, raw_frames = read_sensor_csv(recorder.capture_dir / "pressure_frames_raw.csv")
+
+        np.testing.assert_array_equal(canonical_frames[0], apply_sensor_rotation(frame, 180))
+        np.testing.assert_array_equal(raw_frames[0], frame)
+
+    def test_sensor_rotation_runs_before_existing_orientation(self) -> None:
+        frame = np.arange(256, dtype=np.float32).reshape((16, 16))
+        parsed = ParsedPressureFrame(matrix=frame, checksum=0, raw_packet=b"packet")
+        with TemporaryDirectory() as tmp:
+            recorder = self.start_recorder(Path(tmp), orientation="左右翻转", sensor_rotation_degrees=180)
+            recorder.record_parsed_frame(parsed)
+            recorder.stop()
+
+            _timestamps, frames = read_sensor_csv(recorder.capture_dir / "pressure_frames.csv")
+
+        expected = apply_orientation(apply_sensor_rotation(frame, 180), "左右翻转")
+        np.testing.assert_array_equal(frames[0], expected)
+
     def test_recognition_results_csv_has_required_fields(self) -> None:
         with TemporaryDirectory() as tmp:
             recorder = self.start_recorder(Path(tmp))
@@ -207,6 +236,12 @@ class SerialDataRecorderTest(unittest.TestCase):
 
         self.assertFalse(initial["capture_completed"])
         self.assertEqual(initial["serial_text_filename"], "serial_raw_data.txt")
+        self.assertEqual(initial["pressure_frames_filename"], "pressure_frames.csv")
+        self.assertEqual(initial["pressure_frames_raw_filename"], "pressure_frames_raw.csv")
+        self.assertEqual(initial["sensor_rotation_degrees"], 0)
+        self.assertEqual(initial["orientation_transform"], "none")
+        self.assertTrue(initial["physical_frame_saved"])
+        self.assertTrue(initial["canonical_frame_saved"])
         self.assertEqual(initial["valid_packets_text_saved"], 0)
         self.assertEqual(final["schema_version"], "serial_capture_v1")
         self.assertEqual(final["label"], "前倾端坐")
@@ -216,6 +251,15 @@ class SerialDataRecorderTest(unittest.TestCase):
         self.assertEqual(final["valid_frames_saved"], 1)
         self.assertEqual(final["predictions_saved"], 1)
         self.assertEqual(final["serial_text_filename"], "serial_raw_data.txt")
+        self.assertEqual(final["pressure_frames_filename"], "pressure_frames.csv")
+        self.assertEqual(final["pressure_frames_raw_filename"], "pressure_frames_raw.csv")
+        self.assertEqual(final["pressure_frames_format"], "canonical model-facing 16x16 pressure matrix")
+        self.assertEqual(final["pressure_frames_raw_format"], "raw physical 16x16 pressure matrix from serial protocol parser")
+        self.assertEqual(final["raw_stream_transform"], "none")
+        self.assertEqual(final["serial_text_transform"], "none")
+        self.assertEqual(final["sensor_rotation_degrees"], 0)
+        self.assertEqual(final["orientation_transform"], "none")
+        self.assertEqual(final["canonical_orientation"], "legacy_training_orientation")
         self.assertEqual(final["valid_packets_text_saved"], 0)
         self.assertEqual(final["serial_text_format"], "uppercase hexadecimal bytes, one valid 263-byte packet per line")
         self.assertTrue(final["capture_completed"])
@@ -290,6 +334,15 @@ class SerialDataRecorderTest(unittest.TestCase):
 
         self.assertEqual(metadata["valid_frames_saved"], 1)
         self.assertEqual(metadata["valid_packets_text_saved"], 1)
+
+    def test_metadata_records_sensor_rotation_180(self) -> None:
+        with TemporaryDirectory() as tmp:
+            recorder = self.start_recorder(Path(tmp), sensor_rotation_degrees=180)
+            recorder.stop()
+            metadata = json.loads((recorder.capture_dir / "metadata.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(metadata["sensor_rotation_degrees"], 180)
+        self.assertEqual(metadata["orientation_transform"], "rotate_180")
 
 
 if __name__ == "__main__":

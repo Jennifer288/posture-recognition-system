@@ -138,11 +138,23 @@ class OccupancyDetector:
             and features.front_back_extent >= 5
             and features.concentration <= 0.18
         )
+        compact_broad_human_support = (
+            len(temporal) >= 4
+            and features.total_pressure >= self.human_total_threshold
+            and features.detectable_area >= self.human_active_area_min
+            and features.active_area >= self.object_active_area_max * 0.5
+            and features.max_region_area >= 10
+            and features.left_right_extent >= 5
+            and features.front_back_extent >= 5
+            and features.concentration <= 0.12
+        )
 
-        if human_shape or reclining_human_shape:
+        if human_shape or reclining_human_shape or compact_broad_human_support:
             confidence = 0.78
             if reclining_human_shape and not human_shape:
                 confidence = 0.72
+            if compact_broad_human_support and not (human_shape or reclining_human_shape):
+                confidence = 0.68
             if features.gradual_loading:
                 confidence += 0.08
             if 0.002 <= features.total_cv <= 0.12 or features.cop_motion > 0.01:
@@ -150,6 +162,8 @@ class OccupancyDetector:
             reason = (
                 "high total pressure with coherent low-concentration support resembles reclining human contact"
                 if reclining_human_shape and not human_shape
+                else "sustained high pressure with broad low-level support resembles seated human contact"
+                if compact_broad_human_support and not human_shape
                 else "broad continuous pressure resembles hip/thigh support"
             )
             return self._result(OccupancyState.HUMAN, min(confidence, 0.95), reason, features)

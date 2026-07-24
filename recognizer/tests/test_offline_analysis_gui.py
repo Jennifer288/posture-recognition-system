@@ -243,6 +243,7 @@ class OfflineAnalysisGuiStructureTest(unittest.TestCase):
             trial_var=object(),
             capture_time_var=object(),
             orientation_var=object(),
+            sensor_rotation_var=object(),
             fps_var=object(),
             fps_source_var=object(),
             total_bytes_var=object(),
@@ -534,6 +535,7 @@ class OfflineAnalysisGuiStructureTest(unittest.TestCase):
                 "fps_var",
                 "fps_source_var",
                 "orientation_var",
+                "sensor_rotation_var",
                 "total_bytes_var",
                 "valid_packets_var",
                 "invalid_packets_var",
@@ -554,6 +556,7 @@ class OfflineAnalysisGuiStructureTest(unittest.TestCase):
             input_type="BIN",
             fps=20.05,
             fps_source="metadata",
+            sensor_rotation_degrees=180,
             orientation="原始",
             metadata={"label": "test", "trial": 1, "start_time": "2026-07-22T13:41:07.116371", "capture_completed": True},
             parser_stats={"total_bytes": 999, "valid_packets": 252, "invalid_packets": 0, "discarded_bytes": 0, "invalid_text_line_count": 0},
@@ -565,6 +568,7 @@ class OfflineAnalysisGuiStructureTest(unittest.TestCase):
 
         app.input_file_var.set.assert_called_once_with(input_path.name)
         app.input_directory_var.set.assert_called_once_with(str(input_path.parent))
+        app.sensor_rotation_var.set.assert_called_once()
         app.manual_label_trial_var.set.assert_called_once_with("test · 第1次")
         app.capture_time_var.set.assert_called_once_with("2026-07-22 13:41:07")
         app.data_complete_var.set.assert_called_once_with("完整")

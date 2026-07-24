@@ -192,6 +192,12 @@ class SerialFrameReader(FrameReader):
         request = _ReaderControlRequest(action="end_recording_boundary")
         self._submit_control_request(request, timeout=timeout)
 
+    def clear_pending_frames(self, *, timeout: float = 1.0) -> int:
+        request = _ReaderControlRequest(action="clear_pending_frames")
+        result = self._submit_control_request(request, timeout=timeout)
+        assert isinstance(result, RecordingBoundaryResult)
+        return result.queued_frames_cleared
+
     def stats(self) -> dict[str, object]:
         return {
             "received_bytes": self.received_bytes,
@@ -308,6 +314,9 @@ class SerialFrameReader(FrameReader):
             self.raw_chunk_listener = None
             self.parsed_frame_listener = None
             request.result = RecordingBoundaryResult(buffered_bytes_cleared=0, queued_frames_cleared=0)
+            return
+        if request.action == "clear_pending_frames":
+            request.result = RecordingBoundaryResult(buffered_bytes_cleared=0, queued_frames_cleared=self._clear_frame_queue())
             return
         raise ValueError(f"Unknown SerialFrameReader control action: {request.action}")
 

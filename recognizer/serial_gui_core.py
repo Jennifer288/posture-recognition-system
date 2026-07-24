@@ -10,6 +10,7 @@ import numpy as np
 
 from .csv_gui_core import FramePrediction, frame_record_from_result
 from .feature_extractor import FRAME_SHAPE, as_frame
+from .frame_orientation import apply_sensor_rotation
 
 
 ORIENTATION_MODES = (
@@ -63,6 +64,16 @@ def apply_orientation(frame: np.ndarray, mode: str) -> np.ndarray:
     return np.ascontiguousarray(transformed, dtype=np.float32)
 
 
+def apply_sensor_and_orientation(
+    physical_frame: np.ndarray,
+    sensor_rotation_degrees: int | str,
+    orientation_mode: str,
+) -> np.ndarray:
+    """Apply the one installation transform, then the existing legacy data orientation."""
+    sensor_aligned = apply_sensor_rotation(physical_frame, sensor_rotation_degrees)
+    return apply_orientation(sensor_aligned, orientation_mode)
+
+
 class RecognitionWorker:
     def __init__(
         self,
@@ -71,6 +82,7 @@ class RecognitionWorker:
         recognizer: Any,
         result_queue: Queue[SerialRecognitionResult] | None = None,
         orientation_mode: str | Callable[[], str] = "原始",
+        sensor_rotation_degrees: int | str | Callable[[], int | str] = 0,
         connection_start_time: float | None = None,
         poll_timeout: float = 0.05,
         result_queue_size: int = 5,
@@ -80,6 +92,7 @@ class RecognitionWorker:
         self.recognizer = recognizer
         self.result_queue: Queue[SerialRecognitionResult] = result_queue or Queue(maxsize=max(1, result_queue_size))
         self.orientation_mode = orientation_mode
+        self.sensor_rotation_degrees = sensor_rotation_degrees
         self.connection_start_time = float(connection_start_time if connection_start_time is not None else clock())
         self.poll_timeout = float(poll_timeout)
         self.clock = clock
@@ -207,7 +220,11 @@ class RecognitionWorker:
         return frame
 
     def _predict_frame(self, frame: np.ndarray) -> None:
-        oriented = apply_orientation(frame, self._current_orientation_mode())
+        oriented = apply_sensor_and_orientation(
+            frame,
+            self._current_sensor_rotation_degrees(),
+            self._current_orientation_mode(),
+        )
         timestamp = max(0.0, float(self.clock() - self.connection_start_time))
         start = time.perf_counter()
         with self._recognizer_lock:
@@ -262,3 +279,8 @@ class RecognitionWorker:
         if callable(self.orientation_mode):
             return str(self.orientation_mode())
         return str(self.orientation_mode)
+
+    def _current_sensor_rotation_degrees(self) -> int:
+        if callable(self.sensor_rotation_degrees):
+            return int(self.sensor_rotation_degrees())
+        return int(self.sensor_rotation_degrees)

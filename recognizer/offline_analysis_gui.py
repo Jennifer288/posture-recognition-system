@@ -15,6 +15,7 @@ import numpy as np
 
 from .csv_gui import HeatmapGridGeometry, heatmap_grid_geometry, model_version_display_name
 from .csv_gui_core import load_runtime_recognizer, model_export_info
+from .frame_orientation import SENSOR_ROTATION_OPTIONS, sensor_rotation_degrees_from_label, sensor_rotation_label_from_degrees
 from .gui import pressure_to_color
 from .offline_posture_analyzer import (
     DEFAULT_MODEL_VERSION,
@@ -24,6 +25,7 @@ from .offline_posture_analyzer import (
     posture_statistics,
     resolve_fps,
     resolve_orientation,
+    resolve_sensor_rotation,
 )
 from .offline_serial_parser import parse_serial_input, select_serial_input
 from .serial_gui_core import ORIENTATION_MODES
@@ -136,6 +138,7 @@ class PostureOfflineSerialApp:
         self.trial_var = tk.StringVar(value="—")
         self.capture_time_var = tk.StringVar(value="—")
         self.orientation_var = tk.StringVar(value="原始")
+        self.sensor_rotation_var = tk.StringVar(value=sensor_rotation_label_from_degrees(0))
         self.fps_var = tk.StringVar(value="20")
         self.fps_source_var = tk.StringVar(value="—")
         self.total_bytes_var = tk.StringVar(value="—")
@@ -229,6 +232,7 @@ class PostureOfflineSerialApp:
         self.export_button = ttk.Button(box, text="导出报告", command=self.export_report, style="Offline.TButton")
         self.model_button = ttk.Button(box, text="查看模型详情", command=self.show_model_details, style="Offline.TButton")
         self.orientation_combo = ttk.Combobox(box, textvariable=self.orientation_var, values=ORIENTATION_MODES, state="readonly", width=16, style="Offline.TCombobox")
+        self.sensor_rotation_combo = ttk.Combobox(box, textvariable=self.sensor_rotation_var, values=SENSOR_ROTATION_OPTIONS, state="readonly", width=28, style="Offline.TCombobox")
         self.fps_entry = ttk.Entry(box, textvariable=self.fps_var, width=8, style="Offline.TEntry")
 
         self.folder_button.grid(row=0, column=0, padx=(6, 4), pady=6)
@@ -239,10 +243,12 @@ class PostureOfflineSerialApp:
         self.model_button.grid(row=0, column=5, padx=4, pady=6)
         ttk.Label(box, text="数据方向", style="Offline.TLabel").grid(row=1, column=0, padx=(6, 4), pady=(0, 6), sticky="e")
         self.orientation_combo.grid(row=1, column=1, padx=4, pady=(0, 6), sticky="w")
-        ttk.Label(box, text="FPS", style="Offline.TLabel").grid(row=1, column=2, padx=(10, 4), pady=(0, 6), sticky="e")
-        self.fps_entry.grid(row=1, column=3, padx=4, pady=(0, 6), sticky="w")
-        ttk.Label(box, text="模型", style="Offline.TLabel").grid(row=1, column=4, padx=(10, 4), pady=(0, 6), sticky="e")
-        ttk.Label(box, textvariable=self.model_var, style="OfflineValue.TLabel").grid(row=1, column=5, columnspan=3, sticky="w", padx=(0, 6), pady=(0, 6))
+        ttk.Label(box, text="传感器安装方向", style="Offline.TLabel").grid(row=1, column=2, padx=(10, 4), pady=(0, 6), sticky="e")
+        self.sensor_rotation_combo.grid(row=1, column=3, columnspan=2, padx=4, pady=(0, 6), sticky="w")
+        ttk.Label(box, text="FPS", style="Offline.TLabel").grid(row=2, column=0, padx=(6, 4), pady=(0, 6), sticky="e")
+        self.fps_entry.grid(row=2, column=1, padx=4, pady=(0, 6), sticky="w")
+        ttk.Label(box, text="模型", style="Offline.TLabel").grid(row=2, column=2, padx=(10, 4), pady=(0, 6), sticky="e")
+        ttk.Label(box, textvariable=self.model_var, style="OfflineValue.TLabel").grid(row=2, column=3, columnspan=5, sticky="w", padx=(0, 6), pady=(0, 6))
 
     def _build_left_panel(self, parent: ttk.Frame) -> None:
         left = ttk.Frame(parent)
@@ -592,6 +598,8 @@ class PostureOfflineSerialApp:
         self.capture_time_var.set(format_capture_time(selection.metadata.get("start_time")))
         orientation, orientation_warnings = resolve_orientation(selection.metadata, fallback_orientation=self.orientation_var.get())
         self.orientation_var.set(format_direction(orientation))
+        sensor_rotation, rotation_warnings = resolve_sensor_rotation(selection.metadata)
+        self.sensor_rotation_var.set(sensor_rotation_label_from_degrees(sensor_rotation))
         fps, fps_source, fps_warnings = resolve_fps(selection.metadata, manual_fps=None)
         self.fps_var.set(f"{fps:.4g}")
         self.fps_source_var.set(fps_source)
@@ -599,7 +607,7 @@ class PostureOfflineSerialApp:
         self.invalid_packets_var.set("—")
         self.data_complete_var.set(format_integrity_status(selection.metadata.get("capture_completed")))
         self.calibration_var.set("—")
-        self.warnings_var.set(_format_warnings_for_display(selection.warnings + orientation_warnings + fps_warnings))
+        self.warnings_var.set(_format_warnings_for_display(selection.warnings + orientation_warnings + rotation_warnings + fps_warnings))
         self._set_idle_controls()
         self.progress_var.set("已选择输入，等待开始分析。")
 
@@ -620,15 +628,16 @@ class PostureOfflineSerialApp:
         self.progress_var.set("正在解析串口数据并运行V2.4.3识别...")
         path = self.selected_path
         orientation = self.orientation_var.get()
+        sensor_rotation_degrees = sensor_rotation_degrees_from_label(self.sensor_rotation_var.get())
         self.worker_thread = threading.Thread(
             target=self._analysis_worker,
-            args=(path, orientation, fps),
+            args=(path, orientation, fps, sensor_rotation_degrees),
             name="OfflineSerialAnalysis",
             daemon=True,
         )
         self.worker_thread.start()
 
-    def _analysis_worker(self, path: Path, orientation: str, fps: float) -> None:
+    def _analysis_worker(self, path: Path, orientation: str, fps: float, sensor_rotation_degrees: int) -> None:
         try:
             parse_result = parse_serial_input(path)
             analyzer = OfflinePostureAnalyzer(model_version=self.model_version)
@@ -640,6 +649,7 @@ class PostureOfflineSerialApp:
                 parse_result,
                 orientation=orientation,
                 fps=fps,
+                sensor_rotation_degrees=sensor_rotation_degrees,
                 progress_callback=progress,
                 cancel_event=self.cancel_event,
             )
@@ -791,6 +801,7 @@ class PostureOfflineSerialApp:
             self.file_size_var.set("—")
         self.fps_var.set(f"{result.fps:.4g}")
         self.fps_source_var.set(result.fps_source)
+        self.sensor_rotation_var.set(sensor_rotation_label_from_degrees(result.sensor_rotation_degrees))
         self.orientation_var.set(format_direction(result.orientation))
         self.manual_label_var.set(_display_text(result.metadata.get("label")))
         self.trial_var.set(_display_text(result.metadata.get("trial")))
@@ -1008,6 +1019,7 @@ class PostureOfflineSerialApp:
         self.folder_button.configure(state="normal")
         self.file_button.configure(state="normal")
         self.orientation_combo.configure(state="readonly")
+        self.sensor_rotation_combo.configure(state="readonly")
         self.fps_entry.configure(state="normal")
         self.start_button.configure(state="normal" if has_input else "disabled")
         self.cancel_button.configure(state="disabled")
@@ -1017,6 +1029,7 @@ class PostureOfflineSerialApp:
         self.folder_button.configure(state="disabled")
         self.file_button.configure(state="disabled")
         self.orientation_combo.configure(state="disabled")
+        self.sensor_rotation_combo.configure(state="disabled")
         self.fps_entry.configure(state="disabled")
         self.start_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
@@ -1205,14 +1218,17 @@ def main(
 ) -> int:
     parser = argparse.ArgumentParser(description="Offline serial posture analysis desktop app.")
     parser.add_argument("--model-version", default=model_version, help="Recognizer model version to load.")
+    parser.add_argument("--sensor-rotation", type=int, choices=(0, 180), default=None, help="Initial sensor installation rotation in degrees.")
     args = parser.parse_args(argv)
     root = tk.Tk()
-    PostureOfflineSerialApp(
+    app = PostureOfflineSerialApp(
         root,
         model_version=args.model_version,
         brand_name=brand_name,
         subtitle=subtitle,
         app_title=app_title,
     )
+    if args.sensor_rotation is not None:
+        app.sensor_rotation_var.set(sensor_rotation_label_from_degrees(args.sensor_rotation))
     root.mainloop()
     return 0

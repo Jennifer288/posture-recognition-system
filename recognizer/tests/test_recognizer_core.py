@@ -185,6 +185,21 @@ def unknown_like_frame() -> np.ndarray:
     return frame
 
 
+def concentrated_human_like_frame() -> np.ndarray:
+    frame = np.zeros((16, 16), dtype=float)
+    frame[4:12, 4:12] = 8.0
+    coords = [
+        (6, 6), (6, 7), (6, 8),
+        (7, 5), (7, 6), (7, 7), (7, 8), (7, 9),
+        (8, 6), (8, 7), (8, 8),
+        (9, 7), (10, 7),
+    ]
+    values = [72.0, 90.0, 70.0, 68.0, 112.0, 104.0, 98.0, 66.0, 78.0, 92.0, 74.0, 62.0, 58.0]
+    for (row, col), value in zip(coords, values):
+        frame[row, col] = value
+    return frame
+
+
 class FeatureExtractorTest(unittest.TestCase):
     def test_extract_features_matches_training_feature_shape(self) -> None:
         frame = np.zeros((16, 16), dtype=float)
@@ -265,6 +280,18 @@ class OccupancyDetectorTest(unittest.TestCase):
 
         self.assertEqual(result.state, OccupancyState.LOAD_BELOW_THRESHOLD)
         self.assertGreaterEqual(result.detectable_points, 4)
+
+    def test_sustained_compact_broad_high_pressure_can_be_human(self) -> None:
+        detector = OccupancyDetector(fps=20.0)
+        frame = concentrated_human_like_frame()
+
+        result = detector.analyze(np.stack([frame] * 20))
+
+        self.assertEqual(result.state, OccupancyState.HUMAN)
+        self.assertGreaterEqual(result.total_pressure, 900.0)
+        self.assertLess(result.active_area, 0.075)
+        self.assertGreaterEqual(result.detectable_area, 0.12)
+        self.assertLess(result.concentration, 0.12)
 
 
 class SeatAnalyzerTest(unittest.TestCase):

@@ -19,6 +19,13 @@ from .csv_gui import (
     model_version_display_name,
 )
 from .csv_gui_core import CsvGuiError, FramePrediction, load_runtime_recognizer, model_export_info
+from .frame_orientation import (
+    SENSOR_ROTATION_0,
+    SENSOR_ROTATION_OPTIONS,
+    orientation_transform_name,
+    sensor_rotation_degrees_from_label,
+    sensor_rotation_label_from_degrees,
+)
 from .frame_reader import DEFAULT_SERIAL_BAUDRATE, SerialFrameReader, list_serial_ports
 from .gui import pressure_to_color
 from .serial_gui_core import ORIENTATION_MODES, RecognitionWorker, SerialRecognitionResult
@@ -62,6 +69,7 @@ SERIAL_DANGER_BUTTON_STYLE = "SerialDanger.TButton"
 SERIAL_SECONDARY_BUTTON_STYLE = "SerialSecondary.TButton"
 SERIAL_ENTRY_STYLE = "Serial.TEntry"
 SERIAL_COMBOBOX_STYLE = "Serial.TCombobox"
+SERIAL_GUI_SETTINGS_FILENAME = ".posture_serial_gui_settings.json"
 
 
 def serial_window_title(model_version: str, *, app_title: str | None = None) -> str:
@@ -72,6 +80,72 @@ def serial_window_title(model_version: str, *, app_title: str | None = None) -> 
 
 def serial_subtitle_text(model_version: str, subtitle: str) -> str:
     return f"{subtitle} · {model_version_display_name(model_version)}"
+
+
+def _default_serial_gui_settings_path() -> Path:
+    return Path.home() / SERIAL_GUI_SETTINGS_FILENAME
+
+
+def _load_serial_gui_settings(path: Path | str | None = None) -> dict[str, object]:
+    settings_path = Path(path) if path is not None else _default_serial_gui_settings_path()
+    defaults: dict[str, object] = {"orientation": ORIENTATION_MODES[0], "sensor_rotation_degrees": SENSOR_ROTATION_0}
+    if not settings_path.exists():
+        return defaults
+    try:
+        payload = json.loads(settings_path.read_text(encoding="utf-8"))
+    except Exception:
+        return defaults
+    if not isinstance(payload, dict):
+        return defaults
+    settings = {**payload}
+    orientation = settings.get("orientation")
+    if orientation not in ORIENTATION_MODES:
+        settings["orientation"] = ORIENTATION_MODES[0]
+    try:
+        rotation = int(settings.get("sensor_rotation_degrees", SENSOR_ROTATION_0))
+        orientation_transform_name(rotation)
+    except (TypeError, ValueError):
+        rotation = SENSOR_ROTATION_0
+    settings["sensor_rotation_degrees"] = rotation
+    return {**defaults, **settings}
+
+
+def _save_serial_gui_settings(path: Path | str | None, settings: dict[str, object]) -> None:
+    settings_path = Path(path) if path is not None else _default_serial_gui_settings_path()
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _legacy_orientation_debug_name(orientation: str) -> str:
+    return "none" if orientation == ORIENTATION_MODES[0] else str(orientation)
+
+
+def _effective_transform_debug_name(sensor_rotation_degrees: int | str, orientation: str) -> str:
+    sensor_transform = orientation_transform_name(sensor_rotation_degrees)
+    legacy_orientation = _legacy_orientation_debug_name(orientation)
+    if legacy_orientation == "none":
+        return sensor_transform
+    if sensor_transform == "none":
+        return f"legacy:{orientation}"
+    return f"{sensor_transform} + legacy:{orientation}"
+
+
+def _sensor_transform_status_text(sensor_rotation_degrees: int | str, orientation: str) -> str:
+    rotation = int(sensor_rotation_degrees)
+    legacy_orientation = _legacy_orientation_debug_name(orientation)
+    effective = _effective_transform_debug_name(rotation, orientation)
+    return f"Sensor rotation: {rotation}° · Legacy orientation: {legacy_orientation} · Effective transform: {effective}"
+
+
+def _serial_transform_diagnostic_lines(sensor_rotation_degrees: int | str, orientation: str) -> list[str]:
+    rotation = int(sensor_rotation_degrees)
+    return [
+        f"Sensor installation rotation: {rotation}",
+        f"Legacy data orientation: {_legacy_orientation_debug_name(orientation)}",
+        f"Effective transform: {_effective_transform_debug_name(rotation, orientation)}",
+        f"Worker rotation: {rotation}",
+        f"Recorder rotation: {rotation}",
+    ]
 
 
 class PostureSerialApp:
@@ -108,10 +182,19 @@ class PostureSerialApp:
         self.model_details_window: tk.Toplevel | None = None
         self._reported_reader_error: str | None = None
         self._reported_worker_error: str | None = None
+        self.settings_path = _default_serial_gui_settings_path()
+        self.settings = _load_serial_gui_settings(self.settings_path)
 
         self.port_var = tk.StringVar(value="")
-        self.orientation_var = tk.StringVar(value=ORIENTATION_MODES[0])
+        initial_orientation = str(self.settings.get("orientation", ORIENTATION_MODES[0]))
+        if initial_orientation not in ORIENTATION_MODES:
+            initial_orientation = ORIENTATION_MODES[0]
+        initial_sensor_rotation = int(self.settings.get("sensor_rotation_degrees", SENSOR_ROTATION_0))
+        self.orientation_var = tk.StringVar(value=initial_orientation)
         self.orientation_state = _ThreadSafeValue(self.orientation_var.get())
+        self.sensor_rotation_var = tk.StringVar(value=sensor_rotation_label_from_degrees(initial_sensor_rotation))
+        self.sensor_rotation_state = _ThreadSafeValue(initial_sensor_rotation)
+        self.sensor_rotation_status_var = tk.StringVar(value=_sensor_transform_status_text(initial_sensor_rotation, initial_orientation))
         self.connection_var = tk.StringVar(value="未连接")
         self.current_port_var = tk.StringVar(value="—")
         self.baud_var = tk.StringVar(value=str(DEFAULT_SERIAL_BAUDRATE))
@@ -219,6 +302,25 @@ class PostureSerialApp:
         self.orientation_combo = ttk.Combobox(toolbar, textvariable=self.orientation_var, values=list(ORIENTATION_MODES), width=12, state="readonly", style=SERIAL_COMBOBOX_STYLE)
         self.orientation_combo.grid(row=0, column=9, padx=2)
         self.orientation_combo.bind("<<ComboboxSelected>>", self._on_orientation_changed)
+        ttk.Label(toolbar, text="传感器安装方向", style=SERIAL_CONTROL_LABEL_STYLE).grid(row=1, column=0, padx=(0, 2), pady=(3, 0), sticky="e")
+        self.sensor_rotation_combo = ttk.Combobox(
+            toolbar,
+            textvariable=self.sensor_rotation_var,
+            values=list(SENSOR_ROTATION_OPTIONS),
+            width=28,
+            state="readonly",
+            style=SERIAL_COMBOBOX_STYLE,
+        )
+        self.sensor_rotation_combo.grid(row=1, column=1, columnspan=3, padx=2, pady=(3, 0), sticky="w")
+        self.sensor_rotation_combo.bind("<<ComboboxSelected>>", self._on_sensor_rotation_changed)
+        ttk.Label(toolbar, textvariable=self.sensor_rotation_status_var, style=SERIAL_CONTROL_LABEL_STYLE).grid(
+            row=1,
+            column=4,
+            columnspan=4,
+            padx=(8, 2),
+            pady=(3, 0),
+            sticky="w",
+        )
 
         self._build_capture_panel(row=capture_row)
 
@@ -492,12 +594,14 @@ class PostureSerialApp:
             result_queue: Queue[SerialRecognitionResult] = Queue(maxsize=5)
             reader = SerialFrameReader(port=port, baudrate=DEFAULT_SERIAL_BAUDRATE, timeout=0.1, queue_size=5)
             connection_start_time = time.monotonic()
+            self._print_transform_diagnostics()
             reader.start()
             worker = RecognitionWorker(
                 frame_source=reader,
                 recognizer=recognizer,
                 result_queue=result_queue,
                 orientation_mode=self.orientation_state.get,
+                sensor_rotation_degrees=self.sensor_rotation_state.get,
                 connection_start_time=connection_start_time,
                 poll_timeout=0.02,
             )
@@ -563,6 +667,58 @@ class PostureSerialApp:
 
     def _on_orientation_changed(self, _event: tk.Event | None = None) -> None:
         self.orientation_state.set(self.orientation_var.get())
+        self._update_sensor_rotation_status()
+        self._reset_direction_dependent_state()
+        self._save_settings()
+
+    def _on_sensor_rotation_changed(self, _event: tk.Event | None = None) -> None:
+        if self._is_recording():
+            self.sensor_rotation_var.set(sensor_rotation_label_from_degrees(self._current_sensor_rotation_degrees()))
+            messagebox.showinfo("正在采集", "采集期间不能修改传感器安装方向。")
+            return
+        try:
+            rotation = sensor_rotation_degrees_from_label(self.sensor_rotation_var.get())
+        except ValueError as exc:
+            rotation = SENSOR_ROTATION_0
+            self.sensor_rotation_var.set(sensor_rotation_label_from_degrees(rotation))
+            messagebox.showwarning("方向设置无效", str(exc))
+        self.sensor_rotation_state.set(rotation)
+        self._update_sensor_rotation_status()
+        self._reset_direction_dependent_state()
+        self._save_settings()
+        self.summary_var.set(f"传感器安装方向已切换为 {rotation}°，识别状态已重置。")
+
+    def _reset_direction_dependent_state(self) -> None:
+        self.current_frame = None
+        self.current_record = None
+        self._draw_heatmap(np.zeros((16, 16), dtype=np.float32))
+        if self.reader is not None:
+            try:
+                self.reader.clear_pending_frames(timeout=1.0)
+            except Exception as exc:
+                self.serial_error_var.set(str(exc))
+        if self.result_queue is not None:
+            _drain_queue(self.result_queue)
+        if self.worker is not None:
+            try:
+                self.worker.reset_recognizer(wait=True, timeout=2.0)
+            except Exception as exc:
+                self.recognition_error_var.set(str(exc))
+
+    def _update_sensor_rotation_status(self) -> None:
+        self.sensor_rotation_status_var.set(
+            _sensor_transform_status_text(
+                self._current_sensor_rotation_degrees(),
+                str(self.orientation_state.get()),
+            )
+        )
+
+    def _print_transform_diagnostics(self) -> None:
+        for line in _serial_transform_diagnostic_lines(
+            self._current_sensor_rotation_degrees(),
+            str(self.orientation_state.get()),
+        ):
+            print(line, flush=True)
 
     def choose_capture_directory(self) -> None:
         if self._is_recording():
@@ -601,6 +757,7 @@ class PostureSerialApp:
 
         recorder = SerialDataRecorder()
         try:
+            self._print_transform_diagnostics()
             capture_dir = recorder.start(
                 output_root=self.capture_output_root,
                 label=label,
@@ -609,6 +766,7 @@ class PostureSerialApp:
                 baudrate=DEFAULT_SERIAL_BAUDRATE,
                 orientation=self.orientation_var.get(),
                 model_version=self.model_version,
+                sensor_rotation_degrees=self._current_sensor_rotation_degrees(),
                 serial_reader_stats_start=self.reader.stats(),
             )
         except Exception as exc:
@@ -715,6 +873,7 @@ class PostureSerialApp:
         self.capture_start_button.configure(state=start_state)
         self.port_combo.configure(state=readonly_state)
         self.orientation_combo.configure(state=readonly_state)
+        self.sensor_rotation_combo.configure(state=readonly_state)
 
     def calibrate_empty(self) -> None:
         if self.worker is None or self.reader is None:
@@ -939,6 +1098,22 @@ class PostureSerialApp:
         reset = getattr(self.recognizer, "reset", None)
         if callable(reset):
             reset()
+
+    def _current_sensor_rotation_degrees(self) -> int:
+        return int(self.sensor_rotation_state.get())
+
+    def _save_settings(self) -> None:
+        try:
+            _save_serial_gui_settings(
+                self.settings_path,
+                {
+                    **dict(getattr(self, "settings", {}) or {}),
+                    "orientation": self.orientation_var.get(),
+                    "sensor_rotation_degrees": self._current_sensor_rotation_degrees(),
+                },
+            )
+        except Exception:
+            return
 
     def _on_close(self) -> None:
         self.disconnect()

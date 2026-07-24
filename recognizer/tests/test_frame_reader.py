@@ -257,6 +257,21 @@ class SerialFrameReaderTest(unittest.TestCase):
         self.assertEqual([frame.raw_packet for frame in replayed], [second, third])
         self.assertEqual(reader.valid_frames, 2)
 
+    def test_clear_pending_frames_discards_pre_rotation_queue_frames(self) -> None:
+        fake = BlockingFakeSerial()
+        reader = self.make_reader(fake, queue_size=8)
+
+        try:
+            reader.start()
+            reader._enqueue_frame(np.full((16, 16), 1, dtype=np.float32))
+            reader._enqueue_frame(np.full((16, 16), 2, dtype=np.float32))
+
+            cleared = reader.clear_pending_frames()
+        finally:
+            reader.stop()
+
+        self.assertEqual(cleared, 2)
+
     def test_capture_boundary_aligns_raw_stream_serial_text_and_pressure_csv(self) -> None:
         first = build_packet(bytes([41]) * 256)
         second = build_packet(bytes([42]) * 256)

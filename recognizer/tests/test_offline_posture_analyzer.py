@@ -18,9 +18,11 @@ from recognizer.offline_posture_analyzer import (
     merge_posture_segments,
     resolve_fps,
     resolve_orientation,
+    resolve_sensor_rotation,
     summarize_analysis,
 )
 from recognizer.offline_serial_parser import OfflineParseStats, OfflineSerialParseResult, SerialInputSelection
+from recognizer.frame_orientation import apply_sensor_rotation
 from recognizer.serial_gui_core import apply_orientation
 
 
@@ -139,6 +141,13 @@ class OfflinePostureAnalyzerTest(unittest.TestCase):
         self.assertEqual(orientation, "上下翻转")
         self.assertTrue(warnings)
 
+    def test_resolve_sensor_rotation_uses_metadata_override_or_default(self) -> None:
+        self.assertEqual(resolve_sensor_rotation({"sensor_rotation_degrees": 180})[:2], (180, []))
+        self.assertEqual(resolve_sensor_rotation({"sensor_rotation_degrees": 180}, override_rotation=0)[:2], (0, []))
+        rotation, warnings = resolve_sensor_rotation({})
+        self.assertEqual(rotation, 0)
+        self.assertTrue(warnings)
+
     def test_resolve_fps_uses_metadata_inferred_or_default(self) -> None:
         self.assertEqual(resolve_fps({"fps": 25})[:2], (25.0, "metadata"))
         self.assertEqual(resolve_fps({"valid_frames_saved": 60, "duration_s": 3})[:2], (20.0, "metadata_inferred"))
@@ -167,6 +176,32 @@ class OfflinePostureAnalyzerTest(unittest.TestCase):
         self.assertEqual(result.orientation, "左右翻转")
         self.assertEqual(fake.reset_count, 1)
         np.testing.assert_array_equal(fake.predict_frames[0], apply_orientation(source, "左右翻转"))
+
+    def test_analyze_applies_sensor_rotation_before_orientation(self) -> None:
+        source = np.arange(256, dtype=np.float32).reshape(16, 16)
+        fake = FakeRecognizer()
+        with TemporaryDirectory() as tmp:
+            parse_result = make_parse_result(tmp, [source], metadata={"sensor_rotation_degrees": 180, "orientation": "左右翻转", "fps": 20})
+            analyzer = OfflinePostureAnalyzer(recognizer_factory=lambda **_kwargs: fake)
+
+            result = analyzer.analyze(parse_result)
+
+        expected = apply_orientation(apply_sensor_rotation(source, 180), "左右翻转")
+        self.assertEqual(result.sensor_rotation_degrees, 180)
+        np.testing.assert_array_equal(fake.predict_frames[0], expected)
+        np.testing.assert_array_equal(result.frames[0], expected)
+
+    def test_analyze_sensor_rotation_argument_overrides_metadata(self) -> None:
+        source = np.arange(256, dtype=np.float32).reshape(16, 16)
+        fake = FakeRecognizer()
+        with TemporaryDirectory() as tmp:
+            parse_result = make_parse_result(tmp, [source], metadata={"sensor_rotation_degrees": 180, "orientation": "原始", "fps": 20})
+            analyzer = OfflinePostureAnalyzer(recognizer_factory=lambda **_kwargs: fake)
+
+            result = analyzer.analyze(parse_result, sensor_rotation_degrees=0)
+
+        self.assertEqual(result.sensor_rotation_degrees, 0)
+        np.testing.assert_array_equal(fake.predict_frames[0], source)
 
     def test_metadata_label_does_not_change_prediction(self) -> None:
         outputs = [
